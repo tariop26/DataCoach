@@ -17,19 +17,16 @@ try:
 except Exception:
     pass
 
-# Mode dégradé si pas de secrets (utile pour le dev local)
+# Mode dégradé si pas de secrets
 if not CLIENT_ID or not CLIENT_SECRET:
     st.sidebar.warning("⚠️ Mode Configuration")
     CLIENT_ID = st.sidebar.text_input("Strava Client ID")
     CLIENT_SECRET = st.sidebar.text_input("Strava Client Secret", type="password")
 
 # --- DÉTECTION DE L'ENVIRONNEMENT ---
-# Astuce : On détecte si on est en local ou en production pour ajuster l'URL de redirection
 if "localhost" in st.query_params.get("base_url", "") or not st.secrets:
     REDIRECT_URI = "http://localhost:8501"
 else:
-    # C'est ici qu'on mettra l'URL finale de ton app (ex: https://mon-coach.streamlit.app)
-    # Pour l'instant, on laisse localhost par défaut tant que ce n'est pas déployé
     REDIRECT_URI = "https://datacoach.streamlit.app/"
 
 # --- GESTION DE LA SESSION ---
@@ -37,7 +34,7 @@ if "access_token" not in st.session_state:
     st.session_state.access_token = None
 
 # --- UI : HEADER ---
-st.title("🏃‍♂️ Data Coach")
+st.title("🏃‍♂️ Smart Run Coach")
 st.write("Ton analyseur de performance simplifié.")
 
 # --- LOGIQUE PRINCIPALE ---
@@ -52,12 +49,23 @@ if not st.session_state.access_token:
         with st.spinner("Connexion à Strava en cours..."):
             if CLIENT_ID and CLIENT_SECRET:
                 token_response = strava_auth.exchange_code_for_token(CLIENT_ID, CLIENT_SECRET, auth_code)
+                
                 if token_response:
                     st.session_state.access_token = token_response.get("access_token")
                     st.session_state.refresh_token = token_response.get("refresh_token")
                     st.session_state.athlete = token_response.get("athlete")
                     st.success("Connexion réussie !")
+                    
+                    # --- CORRECTION CRUCIALE ICI ---
+                    # On nettoie l'URL pour ne pas réutiliser le code au prochain rafraîchissement
+                    st.query_params.clear()
                     st.rerun()
+                else:
+                    # Si le code est invalide (déjà utilisé), on nettoie aussi pour sortir de la boucle d'erreur
+                    st.query_params.clear()
+                    st.error("Le lien de connexion a expiré. Veuillez cliquer à nouveau sur le bouton ci-dessous.")
+                    if st.button("Réessayer"):
+                        st.rerun()
             else:
                 st.error("Clés API manquantes.")
     else:
@@ -78,7 +86,7 @@ else:
     
     # Appel API Strava
     headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
-    params = {"per_page": 10} # On récupère un peu plus d'activités
+    params = {"per_page": 10}
     
     response = requests.get("https://www.strava.com/api/v3/athlete/activities", headers=headers, params=params)
     
@@ -88,10 +96,8 @@ else:
         if activities:
             df = pd.json_normalize(activities)
             
-            # --- EXEMPLE DE LOGIQUE MÉTIER SIMPLE ---
             st.info("💡 **Analyse Flash :**")
             
-            # Calcul basique pour l'exemple
             if 'distance' in df.columns:
                 total_km = (df['distance'].sum() / 1000).round(1)
                 st.metric(label="Total Km (10 dernières sorties)", value=f"{total_km} km")
@@ -111,7 +117,13 @@ else:
             st.warning("Aucune activité trouvée.")
             
     else:
-        st.error(f"Erreur connexion Strava (Code {response.status_code}).")
-        if st.button("Réessayer"):
+        # Gestion de l'expiration du token (erreur 401)
+        if response.status_code == 401:
+            st.warning("Session expirée, reconnexion automatique...")
             st.session_state.clear()
             st.rerun()
+        else:
+            st.error(f"Erreur connexion Strava (Code {response.status_code}).")
+            if st.button("Réessayer"):
+                st.session_state.clear()
+                st.rerun()
