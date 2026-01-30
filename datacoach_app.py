@@ -30,14 +30,14 @@ if "localhost" in st.query_params.get("base_url", "") or not st.secrets:
 else:
     # C'est ici qu'on mettra l'URL finale de ton app (ex: https://mon-coach.streamlit.app)
     # Pour l'instant, on laisse localhost par défaut tant que ce n'est pas déployé
-    REDIRECT_URI = "http://localhost:8501"
+    REDIRECT_URI = "https://datacoach.streamlit.app/"
 
 # --- GESTION DE LA SESSION ---
 if "access_token" not in st.session_state:
     st.session_state.access_token = None
 
 # --- UI : HEADER ---
-st.title("🏃‍♂️ Smart Run Coach")
+st.title("🏃‍♂️ Data Coach")
 st.write("Ton analyseur de performance simplifié.")
 
 # --- LOGIQUE PRINCIPALE ---
