@@ -72,3 +72,22 @@ def refresh_access_token(client_id, client_secret, refresh_token):
             return None
     except:
         return None
+
+# --- NOUVEAU : MODE DÉMO / BYPASS ---
+def get_demo_token():
+    """
+    Permet de simuler une connexion réussie SANS Strava.
+    Utile pour le développement quand l'API bloque.
+    """
+    return {
+        "access_token": "demo_fake_token",
+        "refresh_token": "demo_fake_refresh",
+        "athlete": {
+            "id": 12345,
+            "firstname": "Jean-Michel",
+            "lastname": "Testeur",
+            "city": "Grenoble",
+            "country": "France",
+            "profile": "avatar_url"
+        }
+    }
