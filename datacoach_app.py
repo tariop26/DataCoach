@@ -3,6 +3,8 @@ import requests
 import pandas as pd
 import authentification as strava_auth
 import random
+import json
+import os
 from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
@@ -10,7 +12,26 @@ import plotly.graph_objects as go
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
 
-# --- FONCTIONS UTILITAIRES (CALCULS COACH) ---
+# --- FONCTIONS UTILITAIRES (CALCULS COACH & STORAGE) ---
+
+GOALS_FILE = "goals.json"
+
+def load_goals():
+    """Charge les objectifs depuis un fichier JSON local"""
+    if os.path.exists(GOALS_FILE):
+        try:
+            with open(GOALS_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_goal(athlete_id, goal_data):
+    """Sauvegarde l'objectif d'un athlète"""
+    goals = load_goals()
+    goals[str(athlete_id)] = goal_data
+    with open(GOALS_FILE, "w") as f:
+        json.dump(goals, f)
 
 def format_duration(seconds):
     """Transforme des secondes en format H:MM"""
@@ -59,13 +80,11 @@ try:
         CLIENT_ID = st.secrets["STRAVA_CLIENT_ID"]
         CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
     
-    # Nouvelle logique pour l'URL de production
     if "APP_URL" in st.secrets:
         REDIRECT_URI = st.secrets["APP_URL"]
 except Exception:
     pass
 
-# Si on n'a pas les clés, on affiche les champs de saisie (Mode Dev Local)
 if not CLIENT_ID or not CLIENT_SECRET:
     st.sidebar.warning("⚠️ Mode Configuration")
     CLIENT_ID = st.sidebar.text_input("Strava Client ID")
@@ -102,7 +121,6 @@ if not st.session_state.access_token:
         col1, col2 = st.columns(2)
         with col1:
             if CLIENT_ID and CLIENT_SECRET:
-                # On utilise la bonne URL de redirection (Local ou Prod)
                 login_url = strava_auth.get_login_url(CLIENT_ID, REDIRECT_URI)
                 st.link_button("Se connecter avec Strava", login_url, type="primary")
             else:
@@ -114,7 +132,7 @@ if not st.session_state.access_token:
                 st.session_state.athlete = demo_data["athlete"]
                 st.rerun()
 
-        # 3. ZONE DE DÉPANNAGE (Uniquement si on est en local pour ne pas polluer la prod)
+        # 3. ZONE DE DÉPANNAGE (Uniquement si on est en local)
         if "localhost" in REDIRECT_URI:
             st.divider()
             with st.expander("🆘 Dépannage (Localhost uniquement)"):
@@ -133,20 +151,76 @@ else:
     # --- DASHBOARD DU COACH ---
     athlete = st.session_state.athlete
     
-    if st.button("Se déconnecter", key="logout_top"):
-        st.session_state.clear()
-        st.rerun()
-
-    st.divider()
+    # 1. GESTION DU PROFIL & OBJECTIFS (SIDEBAR)
+    athlete_id = str(athlete.get('id', 'demo'))
+    goals_db = load_goals()
+    user_goal = goals_db.get(athlete_id, {})
     
-    # 1. RÉCUPÉRATION DES DONNÉES
+    with st.sidebar:
+        st.header(f"Profil : {athlete.get('firstname', 'Athlète')}")
+        st.write("---")
+        st.subheader("🎯 Mon Objectif")
+        
+        # Formulaire d'objectif
+        with st.form("goal_form"):
+            goal_types = ["Entretien / Plaisir", "Prépa Marathon", "Prépa Semi", "Prépa 10km", "Perte de poids", "Ultra / Trail"]
+            # Index par défaut
+            default_ix = 0
+            if user_goal.get("type") in goal_types:
+                default_ix = goal_types.index(user_goal.get("type"))
+            
+            selected_type = st.selectbox("Je prépare...", goal_types, index=default_ix)
+            
+            # Gestion de la date
+            default_date = None
+            if user_goal.get("date"):
+                try:
+                    default_date = datetime.strptime(user_goal.get("date"), "%Y-%m-%d")
+                except:
+                    pass
+            
+            target_date = st.date_input("Date de l'objectif (optionnel)", value=default_date)
+            custom_note = st.text_input("Note perso (ex: Moins de 4h)", value=user_goal.get("note", ""))
+            
+            if st.form_submit_button("Sauvegarder mon profil"):
+                new_goal = {
+                    "type": selected_type,
+                    "date": target_date.strftime("%Y-%m-%d") if target_date else None,
+                    "note": custom_note
+                }
+                save_goal(athlete_id, new_goal)
+                st.success("Profil mis à jour !")
+                st.rerun()
+        
+        st.write("---")
+        if st.button("Se déconnecter", key="logout_side"):
+            st.session_state.clear()
+            st.rerun()
+
+    # Affichage de l'objectif en haut du dashboard
+    if user_goal:
+        obj_txt = f"🎯 **Objectif :** {user_goal.get('type')}"
+        if user_goal.get('note'):
+            obj_txt += f" ({user_goal.get('note')})"
+        if user_goal.get('date'):
+            d_obj = datetime.strptime(user_goal.get('date'), "%Y-%m-%d")
+            delta_days = (d_obj - datetime.now()).days
+            if delta_days > 0:
+                obj_txt += f" — **J-{delta_days}**"
+            elif delta_days == 0:
+                obj_txt += " — **C'est aujourd'hui !**"
+            else:
+                obj_txt += " — *Objectif passé*"
+        st.info(obj_txt)
+
+
+    # 2. RÉCUPÉRATION DES DONNÉES
     if st.session_state.access_token == "demo_fake_token":
-        st.warning("⚠️ MODE DÉMO ACTIVÉ")
+        if not user_goal: st.warning("⚠️ MODE DÉMO ACTIVÉ")
         activities = generate_mock_data()
         api_success = True
     else:
         headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
-        # On demande 50 activités pour avoir de l'historique pour les graphs
         params = {"per_page": 50} 
         response = requests.get("https://www.strava.com/api/v3/athlete/activities", headers=headers, params=params)
         if response.status_code == 200:
@@ -157,7 +231,7 @@ else:
             st.error(f"Erreur API : {response.status_code}")
 
     if api_success and activities:
-        # 2. NETTOYAGE & ENRICHISSEMENT (PANDAS)
+        # 3. TRAITEMENT DES DONNÉES
         df = pd.json_normalize(activities)
         
         # --- CORRECTION DATE & TIMEZONE ---
@@ -170,14 +244,11 @@ else:
         # Conversions unités
         df['distance_km'] = df['distance'] / 1000
         df['duration_h'] = df['moving_time'] / 3600
+        df['pace_decimal'] = 16.666666666667 / df['average_speed']
         
-        # Calcul Allure (min/km) pour le graph
-        df['pace_decimal'] = 16.666666666667 / df['average_speed'] # min/km en décimal pour le plot
+        # --- BLOC KPI ---
+        st.subheader(f"Analyse des 30 derniers jours")
         
-        # --- BLOC KPI (Haut de page) ---
-        st.subheader(f"👋 Analyse pour {athlete.get('firstname', 'Athlète')}")
-        
-        # On isole les 4 dernières semaines
         current_date = datetime.now()
         last_4_weeks = df[df['start_date_local'] > (current_date - timedelta(days=28))]
         
@@ -187,11 +258,10 @@ else:
         nb_sorties = len(last_4_weeks)
         avg_fc = last_4_weeks['average_heartrate'].mean() if 'average_heartrate' in last_4_weeks else 0
         
-        kpi1.metric("Volume (30j)", f"{int(vol_total)} km")
-        kpi2.metric("Sorties (30j)", f"{nb_sorties}")
+        kpi1.metric("Volume", f"{int(vol_total)} km")
+        kpi2.metric("Sorties", f"{nb_sorties}")
         kpi3.metric("Cardio Moyen", f"{int(avg_fc)} bpm")
         
-        # KPI Intelligent : Tendance Volume
         last_week = df[df['start_date_local'] > (current_date - timedelta(days=7))]
         vol_last_week = last_week['distance_km'].sum()
         avg_vol_prev = (vol_total - vol_last_week) / 3 if (vol_total - vol_last_week) > 0 else vol_last_week
@@ -214,7 +284,10 @@ else:
                              color_continuous_scale='Teal')
             st.plotly_chart(fig_vol, use_container_width=True)
             
-            if delta > 20:
+            # --- CONSEIL PERSONNALISÉ SELON L'OBJECTIF ---
+            if user_goal.get("type") == "Prépa Marathon" and vol_total < 100:
+                st.warning("⚠️ **Conseil Marathon :** Ton volume mensuel ({} km) semble un peu faible pour une prépa marathon. Vise une augmentation progressive.".format(int(vol_total)))
+            elif delta > 20:
                 st.warning("⚠️ **Alerte Surcharge :** Tu as augmenté ton volume de plus de 20% cette semaine.")
             elif delta < -20:
                 st.info("ℹ️ **Récupération :** Semaine plus légère détectée.")
