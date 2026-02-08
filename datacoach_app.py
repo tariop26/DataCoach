@@ -14,31 +14,29 @@ import numpy as np
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
 
-# --- STYLES CSS PERSONNALISÉS (BENTO & CONTRASTE) ---
+# --- STYLES CSS PERSONNALISÉS (BENTO TRANSPARENT) ---
 st.markdown("""
 <style>
-    /* Style global des boîtes Bento */
+    /* Style global des boîtes Bento - Fond transparent pour s'adapter au thème */
     .bento-box {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
+        background-color: transparent; 
+        border: 1px solid rgba(128, 128, 128, 0.3);
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        color: #1f2937; /* Force le texte en gris foncé pour la lisibilité */
+        /* Pas d'ombre pour un look 'flat' intégré */
     }
     
-    /* Titres et chiffres */
+    /* Titres et chiffres - Couleur dynamique selon le thème */
     .metric-value {
         font-size: 2rem;
         font-weight: 800;
-        color: #111827;
         margin: 10px 0;
     }
     .metric-label {
         font-size: 0.85rem;
         font-weight: 600;
-        color: #6b7280;
+        opacity: 0.7;
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
@@ -46,36 +44,33 @@ st.markdown("""
     /* Textes explicatifs */
     .metric-insight {
         font-size: 0.9rem;
-        color: #4b5563;
+        opacity: 0.8;
         margin-top: 5px;
         line-height: 1.5;
     }
     
     /* Bulles de conseil */
     .coach-tip {
-        background-color: #eff6ff;
+        background-color: rgba(59, 130, 246, 0.1);
         border-left: 4px solid #3b82f6;
         padding: 12px;
         font-size: 0.9rem;
-        color: #1e3a8a;
         margin-top: 15px;
         border-radius: 0 8px 8px 0;
     }
     .coach-warning {
-        background-color: #fef2f2;
+        background-color: rgba(239, 68, 68, 0.1);
         border-left: 4px solid #ef4444;
         padding: 12px;
         font-size: 0.9rem;
-        color: #7f1d1d;
         margin-top: 15px;
         border-radius: 0 8px 8px 0;
     }
     .coach-success {
-        background-color: #f0fdf4;
+        background-color: rgba(34, 197, 94, 0.1);
         border-left: 4px solid #22c55e;
         padding: 12px;
         font-size: 0.9rem;
-        color: #14532d;
         margin-top: 15px;
         border-radius: 0 8px 8px 0;
     }
@@ -463,114 +458,140 @@ else:
 
         with tab_cockpit:
             st.markdown("### 🧭 Vue d'ensemble")
+
+            # --- 1. ÉTAT DES LIEUX (7j glissants) ---
+            st.subheader("📅 État des lieux (7 derniers jours)")
             
+            # Calculs 7j sur les données filtrées
+            seven_days_ago = datetime.now() - timedelta(days=7)
+            recent_df = df_filtered[df_filtered['start_date_local'] > seven_days_ago]
+            
+            dist_7d = recent_df['distance_km'].sum()
+            elev_7d = recent_df['total_elevation_gain'].sum() if 'total_elevation_gain' in recent_df else 0
+            time_7d_sec = recent_df['moving_time'].sum()
+            time_7d_str = format_duration(time_7d_sec)
+
+            col_7d_1, col_7d_2, col_7d_3 = st.columns(3)
+            with col_7d_1:
+                with st.container(border=True):
+                    st.markdown('<div class="metric-label">Distance</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value">{dist_7d:.1f} km</div>', unsafe_allow_html=True)
+            with col_7d_2:
+                with st.container(border=True):
+                    st.markdown('<div class="metric-label">Dénivelé (D+)</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value">{int(elev_7d)} m</div>', unsafe_allow_html=True)
+            with col_7d_3:
+                with st.container(border=True):
+                    st.markdown('<div class="metric-label">Temps passé dehors</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value">{time_7d_str}</div>', unsafe_allow_html=True)
+
+            st.divider()
+            
+            # --- 2. VERDICT & BATTERIE ---
+            st.subheader("🤖 Verdict & Énergie")
             verdict_title, verdict_sub, verdict_col_hex = get_coach_verdict(last_metrics['TSB'], last_metrics['ACWR'])
             
-            # LIGNE 1 : VERDICT & BATTERIE (Alignés)
             col1, col2 = st.columns(2)
             
             with col1:
-                # Bento Verdict avec bordure colorée dynamique
                 st.markdown(f"""
                 <div class="bento-box" style="border-left: 8px solid {verdict_col_hex};">
-                    <div class="metric-label">🤖 Verdict du Coach</div>
+                    <div class="metric-label">Verdict du Coach</div>
                     <div class="metric-value" style="color: {verdict_col_hex}">{verdict_title}</div>
                     <div class="metric-insight">{verdict_sub}</div>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                with st.expander("ℹ️ Comprendre le Verdict"):
-                    st.markdown("""
-                    **Comment le coach décide ?**
-                    Il croise ta fatigue court terme (7 jours) avec ta forme long terme (42 jours).
-                    * **Optimal :** Tu progresses sans t'épuiser.
-                    * **Surcharge :** Tu en fais trop, trop vite. Risque de blessure.
-                    * **En Forme :** Tu es frais, prêt pour une perf.
-                    """)
 
             with col2:
                 # Bento Batterie
                 tsb_val = int(last_metrics['TSB'])
-                # Couleur de la batterie selon l'état
                 batt_color = "#22c55e" if tsb_val > 0 else "#f59e0b"
                 if tsb_val < -20: batt_color = "#ef4444"
 
-                with st.container(border=True): # Utilisation container Streamlit standard pour y mettre le graph Plotly
-                    col_b1, col_b2 = st.columns([2, 1])
-                    with col_b1:
-                        st.markdown(f'<div class="metric-label">🔋 Batterie (TSB)</div>', unsafe_allow_html=True)
+                with st.container(border=True):
+                    c_b1, c_b2 = st.columns([1, 1])
+                    with c_b1:
+                        st.markdown(f'<div class="metric-label">Niveau de Batterie (TSB)</div>', unsafe_allow_html=True)
                         st.markdown(f'<div class="metric-value" style="color:{batt_color}">{tsb_val}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="metric-insight">Niveau d\'énergie</div>', unsafe_allow_html=True)
-                    with col_b2:
+                        if tsb_val > 0: st.caption("Batterie chargée 🟢")
+                        elif tsb_val > -20: st.caption("En usage 🟠")
+                        else: st.caption("Batterie critique 🔴")
+                    with c_b2:
                          fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge", value = tsb_val,
                             gauge = {'axis': {'range': [-50, 50], 'visible': False}, 
                                      'bar': {'color': batt_color},
-                                     'bgcolor': "white",
-                                     'steps': [{'range': [-50, 50], 'color': "#f3f4f6"}]} # Fond gris clair
+                                     'bgcolor': "rgba(0,0,0,0)",
+                                     'steps': [{'range': [-50, 50], 'color': "rgba(200,200,200,0.2)"}]} 
                         ))
-                         fig_gauge.update_layout(height=80, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
+                         fig_gauge.update_layout(height=100, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
                          st.plotly_chart(fig_gauge, use_container_width=True)
-                
-                with st.expander("ℹ️ Comprendre la Batterie"):
-                    st.markdown("""
-                    **L'Indice de Fraîcheur (TSB)**
-                    C'est la différence entre ta forme (CTL) et ta fatigue (ATL).
-                    * **Positif (+)** : Ta batterie est pleine. Tu es frais.
-                    * **Négatif (-)** : Tu puises dans tes réserves. C'est normal à l'entraînement, mais il faut recharger (repos) de temps en temps.
-                    * **< -20** : Zone rouge. Batterie critique. Repos obligatoire.
-                    """)
 
-            # --- SECTION 2 : FORME vs FATIGUE ---
-            st.markdown("### 🏗️ Construction de la Performance")
+            # --- 3. FORME & FATIGUE (DÉTAIL) ---
+            st.subheader("🏗️ Analyse Structurelle : Forme vs Fatigue")
             col_f1, col_f2 = st.columns(2)
             
             ctl_val = int(last_metrics['CTL'])
             atl_val = int(last_metrics['ATL'])
             
             # Conseils dynamiques
-            if ctl_val < 40: tip_forme = "Phase de construction. Vise la régularité."
-            else: tip_forme = "Base solide. Tu peux encaisser de l'intensité."
+            if ctl_val < 30: tip_forme = "Niveau Débutant/Reprise. La régularité est ta priorité."
+            elif ctl_val < 60: tip_forme = "Bonne base. Tu peux commencer à charger."
+            else: tip_forme = "Machine ! Grosse caisse aérobie."
 
             if atl_val > ctl_val + 20: 
-                tip_fatigue = "⚠️ **Danger :** Charge brutale. Ralentis !"
+                tip_fatigue = "⚠️ **Danger :** Tu en fais trop d'un coup. Ralentis immédiatement."
                 css_fatigue = "coach-warning"
                 border_fatigue = "#ef4444"
-            elif atl_val < ctl_val - 10:
-                tip_fatigue = "💤 **Repos :** Tu es en phase d'assimilation."
+            elif atl_val < ctl_val - 15:
+                tip_fatigue = "💤 **Repos :** Tu es en sous-régime. Repos ou manque d'entraînement ?"
                 css_fatigue = "coach-tip"
                 border_fatigue = "#3b82f6"
             else:
-                tip_fatigue = "✅ **Productif :** Charge adaptée à ta forme."
+                tip_fatigue = "✅ **Productif :** Charge cohérente avec ta forme."
                 css_fatigue = "coach-success"
                 border_fatigue = "#22c55e"
 
             with col_f1:
-                st.markdown(f"""
-                <div class="bento-box" style="border-left: 5px solid #22c55e;">
-                    <div class="metric-label">🏃 Forme (CTL)</div>
-                    <div class="metric-value">{ctl_val}</div>
-                    <div class="metric-insight">Ta "Caisse" (Moyenne 42j)</div>
-                    <div class="coach-tip">
-                        <strong>Conseil :</strong> {tip_forme}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col_f2:
-                st.markdown(f"""
-                <div class="bento-box" style="border-left: 5px solid {border_fatigue};">
-                    <div class="metric-label">💤 Fatigue (ATL)</div>
-                    <div class="metric-value">{atl_val}</div>
-                    <div class="metric-insight">Ta Charge Récente (Moyenne 7j)</div>
-                    <div class="{css_fatigue}">
-                        <strong>Conseil :</strong> {tip_fatigue}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                with st.container(border=True):
+                    c_f1_a, c_f1_b = st.columns([2, 1])
+                    with c_f1_a:
+                        st.markdown('<div class="metric-label">🏃 Forme (CTL)</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-value">{ctl_val}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-insight">Moyenne Charge 42 jours<br><i>Ta "caisse" ou endurance de fond.</i></div>', unsafe_allow_html=True)
+                    with c_f1_b:
+                        # Jauge Forme (0-100 arbitraire pour amateur)
+                        fig_ctl = go.Figure(go.Indicator(
+                            mode = "gauge+number", value = ctl_val,
+                            number = {'font': {'size': 1}}, # Hack pour cacher le chiffre duplicata
+                            gauge = {'axis': {'range': [0, 100], 'visible': False}, 'bar': {'color': "#3b82f6"}}
+                        ))
+                        fig_ctl.update_layout(height=80, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
+                        st.plotly_chart(fig_ctl, use_container_width=True)
+                    
+                    st.markdown(f'<div class="coach-tip"><strong>Conseil :</strong> {tip_forme}</div>', unsafe_allow_html=True)
 
-            # GRAPHIQUE ÉVOLUTION
-            st.markdown("#### 📉 Tendance sur 60 jours")
+            with col_f2:
+                with st.container(border=True):
+                    c_f2_a, c_f2_b = st.columns([2, 1])
+                    with c_f2_a:
+                        st.markdown('<div class="metric-label">💤 Fatigue (ATL)</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-value">{atl_val}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-insight">Moyenne Charge 7 jours<br><i>La fatigue accumulée récemment.</i></div>', unsafe_allow_html=True)
+                    with c_f2_b:
+                        # Jauge Fatigue (0-150 car ça peut monter vite)
+                        fig_atl = go.Figure(go.Indicator(
+                            mode = "gauge+number", value = atl_val,
+                            number = {'font': {'size': 1}},
+                            gauge = {'axis': {'range': [0, 150], 'visible': False}, 'bar': {'color': border_fatigue}}
+                        ))
+                        fig_atl.update_layout(height=80, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
+                        st.plotly_chart(fig_atl, use_container_width=True)
+                    
+                    st.markdown(f'<div class="{css_fatigue}"><strong>Conseil :</strong> {tip_fatigue}</div>', unsafe_allow_html=True)
+
+            # --- 4. GRAPHIQUE ÉVOLUTION ---
+            st.subheader("📉 Évolution (60 jours)")
             date_60d_ago = datetime.now() - timedelta(days=60)
             df_chart = df_daily_metrics[df_daily_metrics.index > date_60d_ago].copy()
             
@@ -581,58 +602,61 @@ else:
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['ATL'], 
                                             name='Fatigue (ATL)', line=dict(color='#f97316', width=2)))
                 fig_ff.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0), 
-                                     legend=dict(orientation="h", y=1.1))
+                                     legend=dict(orientation="h", y=1.1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_ff, use_container_width=True)
             else:
                 st.info("Pas assez de données pour afficher l'historique.")
 
             st.divider()
 
-            # LIGNE 3 : KPIs SECONDAIRES
+            # --- 5. INDICATEURS CLÉS (KPIs) ---
+            st.subheader("⚡ Indicateurs de Performance")
+            
+            # LIGNE A : KPI MÉTIER
             col3, col4, col5 = st.columns(3)
             with col3:
                 with st.container(border=True):
                     st.markdown('<div class="metric-label">Consistance</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">🔥 {consistency_streak} Sem.</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Série en cours</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Série active. Ne brise pas la chaîne !</div>', unsafe_allow_html=True)
             with col4:
                 with st.container(border=True):
-                    dist_7d = df_filtered[df_filtered['start_date_local'] > (datetime.now() - timedelta(days=7))]['distance_km'].sum()
-                    st.markdown('<div class="metric-label">Volume 7j</div>', unsafe_allow_html=True)
+                    # Volume sur données filtrées
+                    st.markdown('<div class="metric-label">Volume Sport (7j)</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">{int(dist_7d)} km</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Glissant sur 7 jours</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Kilomètres parcourus (Filtre actif)</div>', unsafe_allow_html=True)
             with col5:
                 with st.container(border=True):
                     mono = last_metrics['Monotony']
                     col_mono = "#ef4444" if mono > 2.0 else "#22c55e"
                     st.markdown('<div class="metric-label">Monotonie</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value" style="color:{col_mono}">{mono:.2f}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Cible < 2.0</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Variété de l\'entrainement (Cible < 2.0)</div>', unsafe_allow_html=True)
 
-            # LIGNE 4 : METRIQUES AVANCÉES
+            # LIGNE B : METRIQUES AVANCÉES
             col6, col7, col8 = st.columns(3)
             with col6:
                 with st.container(border=True):
                     st.markdown('<div class="metric-label">Coût Cardio</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">{int(cot_val) if cot_val else "--"}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">bpm / km</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">bpm / km (Économie)</div>', unsafe_allow_html=True)
             with col7:
                 with st.container(border=True):
                     st.markdown('<div class="metric-label">Puissance</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">{pwr_val:.1f}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Watts / bpm</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Watts / bpm (Rendement)</div>', unsafe_allow_html=True)
             with col8:
                 with st.container(border=True):
                     st.markdown('<div class="metric-label">Punch</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">{int(punch_val) if punch_val else "--"}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">m / heure (D+)</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">D+ mètres / heure (Vitesse Verticale)</div>', unsafe_allow_html=True)
 
             # SHOES
             with st.container(border=True):
-                 st.markdown("#### 👟 Matériel")
+                 st.markdown("#### 👟 Matériel (Chaussure principale)")
                  pct = min(primary_shoe_dist / max_shoe_dist, 1.0)
                  st.progress(pct)
-                 st.caption(f"{int(primary_shoe_dist)} km parcourus avec {primary_shoe_name}")
+                 st.caption(f"{int(primary_shoe_dist)} km parcourus avec {primary_shoe_name}. Pense à changer à 800km.")
 
         # =================================================
         # PAGE 2 : MICROSCOPE
