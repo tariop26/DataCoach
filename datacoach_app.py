@@ -29,12 +29,10 @@ def calculate_pace(speed_ms):
 def generate_mock_data():
     """Génère des données riches pour la démo"""
     data = []
-    # On génère 30 activités sur les 60 derniers jours
     today = datetime.now()
     for i in range(30):
         date_act = today - timedelta(days=random.randint(0, 60))
         dist = random.randint(5000, 22000)
-        # On simule : Plus c'est court, plus c'est intense (souvent)
         speed = random.uniform(2.5, 3.5) if dist > 15000 else random.uniform(3.0, 4.2)
         hr = random.randint(135, 175)
         
@@ -48,7 +46,6 @@ def generate_mock_data():
             "average_speed": speed,
             "type": "Run"
         })
-    # On trie par date
     data.sort(key=lambda x: x['start_date_local'], reverse=True)
     return data
 
@@ -83,11 +80,12 @@ st.markdown("**Ton analyseur de performance :** *On ne court pas plus, on court 
 # --- LOGIQUE PRINCIPALE ---
 
 if not st.session_state.access_token:
-    # ... (Logique de connexion inchangée, je condense pour la lisibilité)
+    # 1. Vérification des paramètres URL (Code retour Strava)
     query_params = st.query_params
     auth_code = query_params.get("code")
     
     if auth_code:
+        # Cas idéal : La redirection a fonctionné
         with st.spinner("Connexion au vestiaire..."):
             if CLIENT_ID and CLIENT_SECRET:
                 token_response = strava_auth.exchange_code_for_token(CLIENT_ID, CLIENT_SECRET, auth_code)
@@ -97,6 +95,7 @@ if not st.session_state.access_token:
                     st.query_params.clear()
                     st.rerun()
     else:
+        # 2. Affichage des boutons de connexion
         col1, col2 = st.columns(2)
         with col1:
             if CLIENT_ID and CLIENT_SECRET:
@@ -110,6 +109,28 @@ if not st.session_state.access_token:
                 st.session_state.access_token = demo_data["access_token"]
                 st.session_state.athlete = demo_data["athlete"]
                 st.rerun()
+
+        # 3. ZONE DE DÉPANNAGE (Pour Codespaces / Localhost)
+        st.divider()
+        with st.expander("🆘 Dépannage : La redirection échoue (Page blanche / Erreur) ?"):
+            st.warning("Si vous êtes sur Codespaces, Strava ne peut pas ouvrir 'localhost'.")
+            st.markdown("""
+            1. Regardez l'URL de la page d'erreur (celle qui commence par `localhost:8501...`).
+            2. Copiez le code qui se trouve après `code=` (ex: `251b8c...`).
+            3. Collez-le ci-dessous.
+            """)
+            manual_code = st.text_input("Coller le code Strava ici")
+            if st.button("Valider le code manuellement"):
+                if CLIENT_ID and CLIENT_SECRET and manual_code:
+                    with st.spinner("Échange du code manuel..."):
+                        token_response = strava_auth.exchange_code_for_token(CLIENT_ID, CLIENT_SECRET, manual_code)
+                        if token_response:
+                            st.session_state.access_token = token_response.get("access_token")
+                            st.session_state.athlete = token_response.get("athlete")
+                            st.success("Connexion manuelle réussie !")
+                            st.rerun()
+                else:
+                    st.error("Veuillez remplir les clés API et le code.")
 
 else:
     # --- DASHBOARD DU COACH ---
