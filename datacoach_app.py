@@ -14,65 +14,85 @@ import numpy as np
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
 
-# --- STYLES CSS PERSONNALISÉS (BENTO TRANSPARENT) ---
+# --- STYLES CSS PERSONNALISÉS (BENTO PRO) ---
 st.markdown("""
 <style>
-    /* Style global des boîtes Bento - Fond transparent pour s'adapter au thème */
+    /* Style global des boîtes Bento */
     .bento-box {
         background-color: transparent; 
         border: 1px solid rgba(128, 128, 128, 0.3);
         border-radius: 12px;
-        padding: 20px;
+        padding: 24px;
         margin-bottom: 20px;
-        height: 100%; /* Force la hauteur */
+        height: 100%;
+        min-height: 320px; /* Force la même taille pour les blocs alignés */
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+    }
+    
+    /* Layout Interne (Flexbox pour aligner Texte et Jauges) */
+    .bento-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
     }
     
     /* Titres et chiffres */
     .metric-value {
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 800;
-        margin: 10px 0;
+        margin: 0;
+        line-height: 1.1;
     }
     .metric-label {
-        font-size: 0.85rem;
-        font-weight: 600;
-        opacity: 0.7;
+        font-size: 0.9rem;
+        font-weight: 700;
+        opacity: 0.6;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 1px;
+        margin-bottom: 5px;
+    }
+    .metric-sub {
+        font-size: 0.85rem;
+        opacity: 0.5;
+        font-weight: 500;
     }
     
     /* Textes explicatifs */
     .metric-insight {
-        font-size: 0.95rem; /* Un peu plus gros pour la lisibilité */
-        opacity: 0.9;
-        margin-top: 8px;
+        font-size: 0.95rem;
+        opacity: 0.85;
+        margin-top: 15px;
         line-height: 1.6;
+        border-top: 1px solid rgba(128, 128, 128, 0.1);
+        padding-top: 15px;
+    }
+    
+    /* Barres de progression Custom HTML */
+    .progress-container {
+        width: 100%;
+        background-color: rgba(128,128,128,0.1);
+        border-radius: 8px;
+        height: 12px;
+        margin-top: 5px;
+        overflow: hidden;
+    }
+    .progress-bar {
+        height: 100%;
+        border-radius: 8px;
+        transition: width 0.5s ease-in-out;
     }
     
     /* Bulles de conseil */
-    .coach-tip {
-        background-color: rgba(59, 130, 246, 0.1);
-        border-left: 4px solid #3b82f6;
-        padding: 12px;
-        font-size: 0.9rem;
-        margin-top: 15px;
-        border-radius: 0 8px 8px 0;
-    }
-    .coach-warning {
-        background-color: rgba(239, 68, 68, 0.1);
-        border-left: 4px solid #ef4444;
-        padding: 12px;
-        font-size: 0.9rem;
-        margin-top: 15px;
-        border-radius: 0 8px 8px 0;
-    }
-    .coach-success {
-        background-color: rgba(34, 197, 94, 0.1);
-        border-left: 4px solid #22c55e;
-        padding: 12px;
-        font-size: 0.9rem;
-        margin-top: 15px;
-        border-radius: 0 8px 8px 0;
+    .coach-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -176,45 +196,39 @@ def get_coach_verdict(tsb, acwr):
 
     if acwr > 1.5:
         verdict = "🛑 STOP DANGER"
-        subtext = "Risque de blessure maximal."
+        subtext = "Risque de blessure maximal"
         color = "#ef4444" # Rouge
         detail = (
-            "⚠️ **Alerte Rouge :** Ton ratio de charge aiguë (ACWR) dépasse 1.5. "
-            "Cela signifie que tu as augmenté ta charge d'entraînement beaucoup trop brutalement "
-            "par rapport à ce que ton corps a l'habitude d'encaisser ces 4 dernières semaines. "
-            "Tes tendons et muscles sont en zone rouge. **Conseil :** Coupe tout pendant 3 jours, "
-            "puis reprends uniquement par du footing très léger. Pas d'intensité cette semaine."
+            "Ton ratio de charge aiguë (ACWR) dépasse 1.5. Tu as augmenté ta charge de +50% "
+            "par rapport à tes habitudes du mois dernier. C'est la zone rouge pour tes tendons et ligaments. "
+            "**Action :** Coupe l'entraînement 48h minimum, puis reprends par du footing fondamental uniquement."
         )
     elif tsb < -20:
         verdict = "⚠️ SURCHARGE"
-        subtext = "Fatigue excessive détectée."
+        subtext = "Fatigue profonde détectée"
         color = "#f59e0b" # Orange
         detail = (
-            "🟠 **Attention :** Ta balance de stress (TSB) est descendue très bas (< -20). "
-            "Tu accumules de la fatigue plus vite que tu ne récupères. C'est productif à court terme "
-            "pour créer un pic de forme plus tard, mais dangereux si ça dure. "
-            "**Conseil :** Allège le programme. Fais sauter la prochaine séance difficile ou remplace-la "
-            "par du vélo souple / repos complet."
+            "Tu es en déficit énergétique important (TSB < -20). Tu creuses ta fatigue plus vite que tu ne récupères. "
+            "C'est une phase de 'Overreaching' qui peut être utile AVANT une semaine de repos, mais dangereuse si elle dure. "
+            "**Action :** Réduis le volume de 40% cette semaine pour assimiler le travail."
         )
     elif tsb > 10:
-        verdict = "🚀 EN FORME"
-        subtext = "Tous les voyants sont au vert."
+        verdict = "🚀 PIC DE FORME"
+        subtext = "Fraîcheur musculaire optimale"
         color = "#22c55e" # Vert
         detail = (
-            "🟢 **Feu Vert :** Tu as une excellente fraîcheur physique tout en ayant maintenu un entraînement régulier. "
-            "C'est l'état idéal pour perfer ! Si tu as une course ou un test VMA, c'est le moment. "
-            "**Conseil :** Profite de cet état de grâce pour faire une séance de qualité (Seuil ou VMA) "
-            "car tes jambes vont répondre."
+            "Affûtage réussi ! Ta fraîcheur est positive (>10) tout en gardant un bon niveau d'entraînement. "
+            "Ton système nerveux est régénéré et tes jambes sont pleines de 'jus'. "
+            "**Action :** C'est le moment idéal pour une compétition, un test VMA ou une séance clé à haute intensité."
         )
     else: # TSB entre -20 et 10
-        verdict = "✅ OPTIMAL"
-        subtext = "Équilibre Charge/Récup parfait."
+        verdict = "✅ ENTRAÎNEMENT OPTIMAL"
+        subtext = "Zone de développement durable"
         color = "#3b82f6" # Bleu
         detail = (
-            "🔵 **Vitesse de croisière :** Tu es dans la zone de travail idéale ('Sweet Spot'). "
-            "Tu t'entraînes suffisamment pour progresser (créer de la fatigue) mais tu récupères assez "
-            "pour assimiler le travail. C'est la clé de la régularité. "
-            "**Conseil :** Ne change rien. Continue d'alterner efforts et repos comme tu le fais."
+            "Tu navigues dans la 'Sweet Spot' zone. Tu maintiens une pression d'entraînement suffisante pour forcer ton corps à s'adapter, "
+            "sans toutefois l'épuiser. C'est l'équilibre parfait pour construire un moteur solide sur le long terme. "
+            "**Action :** Garde ce cap, la régularité paie."
         )
         
     return verdict, subtext, color, detail
@@ -430,6 +444,12 @@ else:
         df_daily_metrics = calculate_training_metrics(df)
         last_metrics = df_daily_metrics.iloc[-1]
         
+        # Calcul des Max de la Saison (pour jauges)
+        max_ctl_season = int(df_daily_metrics['CTL'].max()) if not df_daily_metrics.empty else 100
+        max_atl_season = int(df_daily_metrics['ATL'].max()) if not df_daily_metrics.empty else 100
+        if max_ctl_season == 0: max_ctl_season = 100
+        if max_atl_season == 0: max_atl_season = 100
+        
         # --- CALCULS KPI "TOP OF THE POP" ---
         now = datetime.now()
         df_30d = df_filtered[df_filtered['start_date_local'] > (now - timedelta(days=30))].copy()
@@ -522,66 +542,52 @@ else:
             col1, col2 = st.columns(2)
             
             with col1:
-                # Bloc Verdict avec Bordure Colorée (Style identique à la batterie)
+                # Bloc Verdict
                 st.markdown(f"""
                 <div class="bento-box" style="border-left: 8px solid {verdict_col_hex};">
-                    <div class="metric-label">Verdict du Coach</div>
-                    <div class="metric-value" style="color: {verdict_col_hex}">{verdict_title}</div>
-                    <div class="metric-insight">{verdict_sub}</div>
-                    <div class="metric-insight" style="margin-top: 15px; font-style: italic; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px;">
+                    <div>
+                        <div class="metric-label" style="color:{verdict_col_hex}">Verdict du Coach</div>
+                        <div class="metric-value">{verdict_title}</div>
+                        <div class="metric-sub">{verdict_sub}</div>
+                    </div>
+                    <div class="metric-insight">
                         {verdict_detail}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             with col2:
-                # Calcul de la batterie en % (TSB -30 = 0%, TSB +20 = 100%)
+                # Calcul de la batterie
                 tsb_val = int(last_metrics['TSB'])
-                # Normalisation entre 0 et 100
-                # Si TSB = -30, pct = 0. Si TSB = +20, pct = 100.
                 battery_pct = max(0, min(100, int((tsb_val + 30) / 50 * 100)))
                 
-                batt_color = "#22c55e" # Vert par défaut
+                batt_color = "#22c55e" # Vert
                 if battery_pct < 20: batt_color = "#ef4444" # Rouge
                 elif battery_pct < 50: batt_color = "#f59e0b" # Orange
 
-                # Bloc Batterie avec Bordure Colorée (Style identique au verdict)
+                # Bloc Batterie avec Jauge Intégrée
                 st.markdown(f"""
                 <div class="bento-box" style="border-left: 8px solid {batt_color};">
-                    <div class="metric-label">Niveau de Batterie</div>
-                    <div class="metric-value" style="color: {batt_color}">{battery_pct}%</div>
-                    <div class="metric-insight">Basé sur ton indice de fraîcheur (TSB: {tsb_val})</div>
-                    <div class="metric-insight" style="margin-top: 15px; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px;">
-                        C'est ton "carburant" disponible aujourd'hui.
-                        <ul>
-                            <li><strong>100% :</strong> Pleine bourre, prêt à battre des records.</li>
-                            <li><strong>50% :</strong> État normal d'entraînement.</li>
-                            <li><strong>0% :</strong> Épuisement total, risque de blessure.</li>
-                        </ul>
+                    <div class="bento-header">
+                        <div>
+                            <div class="metric-label" style="color:{batt_color}">Niveau de Batterie</div>
+                            <div class="metric-value">{battery_pct}%</div>
+                            <div class="metric-sub">Score TSB : {tsb_val}</div>
+                        </div>
+                        <div style="flex:1; margin-left: 20px; display:flex; flex-direction:column; justify-content:center;">
+                            <div style="font-weight:bold; font-size:1.5rem; text-align:right; color:{batt_color}">🔋</div>
+                            <div class="progress-container">
+                                <div class="progress-bar" style="width: {battery_pct}%; background-color: {batt_color};"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="metric-insight">
+                        C'est ton <strong>carburant physiologique</strong> disponible aujourd'hui.
+                        Une batterie à 100% signifie que tu es parfaitement reposé et prêt pour une performance maximale.
+                        Sous les 30%, ton réservoir est vide : risque de panne sèche (blessure/maladie).
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # Bar Chart Horizontal pour la batterie (Intégré sous le texte via Plotly)
-                # On utilise une colonne st.plotly_chart en dehors du HTML pour la propreté ou intégré via container
-                fig_batt = go.Figure(go.Bar(
-                    x=[battery_pct],
-                    y=['Batterie'],
-                    orientation='h',
-                    marker=dict(color=batt_color),
-                    text=[f"{battery_pct}%"],
-                    textposition='auto',
-                    hoverinfo='none'
-                ))
-                fig_batt.update_layout(
-                    xaxis=dict(range=[0, 100], visible=True, title="Niveau de Charge (%)"),
-                    yaxis=dict(visible=False),
-                    height=80,
-                    margin=dict(l=0, r=0, t=0, b=20),
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0.05)'
-                )
-                st.plotly_chart(fig_batt, use_container_width=True)
 
             # --- 3. FORME & FATIGUE (DÉTAIL) ---
             st.subheader("🏗️ Analyse Structurelle : Forme vs Fatigue")
@@ -590,16 +596,25 @@ else:
             ctl_val = int(last_metrics['CTL'])
             atl_val = int(last_metrics['ATL'])
             
+            # Calcul % par rapport au max saison
+            pct_ctl = min(100, int(ctl_val / max_ctl_season * 100))
+            pct_atl = min(100, int(atl_val / max_atl_season * 100))
+            
             with col_f1:
                 st.markdown(f"""
                 <div class="bento-box" style="border-left: 5px solid #3b82f6;">
-                    <div class="metric-label">🏃 Niveau de Forme (CTL)</div>
-                    <div class="metric-value">{ctl_val}</div>
+                    <div class="bento-header">
+                         <div>
+                            <div class="metric-label" style="color:#3b82f6">🏃 Capital Endurance (CTL)</div>
+                            <div class="metric-value">{ctl_val} <span style="font-size:1rem; opacity:0.5; font-weight:400;">/ {max_ctl_season} (Max)</span></div>
+                        </div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-bar" style="width: {pct_ctl}%; background-color: #3b82f6;"></div>
+                    </div>
                     <div class="metric-insight">
-                        <strong>C'est quoi ?</strong> Imagine que c'est la taille de ton moteur (V8, V12...). 
-                        C'est la moyenne de ta charge d'entraînement sur les <strong>42 derniers jours</strong>.
-                        Plus ce chiffre est élevé, plus tu es capable d'encaisser des efforts longs et durs sans broncher.
-                        C'est ton capital "Endurance" qui se construit lentement.
+                        C'est la taille de ton <strong>moteur aérobie</strong>. Il représente ta capacité à encaisser des charges de travail élevées sans t'effondrer. 
+                        Ce capital se construit lentement (sur 42 jours). Plus il est haut, plus tu es un athlète "solide".
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -611,28 +626,33 @@ else:
                 
                 st.markdown(f"""
                 <div class="bento-box" style="border-left: 5px solid {color_fatigue};">
-                    <div class="metric-label">💤 Niveau de Fatigue (ATL)</div>
-                    <div class="metric-value" style="color:{color_fatigue}">{atl_val}</div>
+                    <div class="bento-header">
+                         <div>
+                            <div class="metric-label" style="color:{color_fatigue}">💤 Fatigue Aiguë (ATL)</div>
+                            <div class="metric-value">{atl_val} <span style="font-size:1rem; opacity:0.5; font-weight:400;">/ {max_atl_season} (Max)</span></div>
+                        </div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-bar" style="width: {pct_atl}%; background-color: {color_fatigue};"></div>
+                    </div>
                     <div class="metric-insight">
-                        <strong>C'est quoi ?</strong> C'est la facture que tu paies pour tes efforts récents.
-                        C'est la moyenne de ta charge sur les <strong>7 derniers jours</strong>.
-                        Si la Fatigue (ATL) est beaucoup plus haute que ta Forme (CTL), tu es en "Dette".
-                        Si elle est plus basse, tu es en "Récupération".
+                        C'est le <strong>stress physiologique</strong> immédiat (7 jours). C'est nécessaire pour progresser (phénomène de surcompensation), 
+                        mais il doit être cyclique. Si cette jauge reste bloquée dans le rouge trop longtemps sans redescendre, tu ne progresses plus, tu t'épuises.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             # --- 4. GRAPHIQUE ÉVOLUTION ---
-            st.subheader("📉 Évolution (60 jours)")
+            st.subheader("📉 Évolution de la Saison (60 jours)")
             date_60d_ago = datetime.now() - timedelta(days=60)
             df_chart = df_daily_metrics[df_daily_metrics.index > date_60d_ago].copy()
             
             if not df_chart.empty:
                 fig_ff = go.Figure()
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['CTL'], fill='tozeroy', 
-                                            name='Forme (CTL - Capital)', line=dict(color='#3b82f6')))
+                                            name='Capital Forme (CTL)', line=dict(color='#3b82f6')))
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['ATL'], 
-                                            name='Fatigue (ATL - Dette)', line=dict(color='#f97316', width=2)))
+                                            name='Dette de Fatigue (ATL)', line=dict(color='#f97316', width=2)))
                 fig_ff.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0), 
                                      legend=dict(orientation="h", y=1.1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_ff, use_container_width=True)
