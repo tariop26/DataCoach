@@ -49,27 +49,30 @@ def generate_mock_data():
     data.sort(key=lambda x: x['start_date_local'], reverse=True)
     return data
 
-# --- GESTION DES SECRETS ---
+# --- GESTION DES SECRETS ET CONFIGURATION URL ---
 CLIENT_ID = None
 CLIENT_SECRET = None
+REDIRECT_URI = "http://localhost:8501" # Valeur par défaut
 
 try:
     if "STRAVA_CLIENT_ID" in st.secrets:
         CLIENT_ID = st.secrets["STRAVA_CLIENT_ID"]
         CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
+    
+    # Nouvelle logique pour l'URL de production
+    if "APP_URL" in st.secrets:
+        REDIRECT_URI = st.secrets["APP_URL"]
 except Exception:
     pass
 
+# Si on n'a pas les clés, on affiche les champs de saisie (Mode Dev Local)
 if not CLIENT_ID or not CLIENT_SECRET:
     st.sidebar.warning("⚠️ Mode Configuration")
     CLIENT_ID = st.sidebar.text_input("Strava Client ID")
     CLIENT_SECRET = st.sidebar.text_input("Strava Client Secret", type="password")
 
-if "localhost" in st.query_params.get("base_url", "") or not st.secrets:
-    REDIRECT_URI = "http://localhost:8501"
-else:
-    REDIRECT_URI = "http://localhost:8501"
 
+# --- GESTION DE LA SESSION ---
 if "access_token" not in st.session_state:
     st.session_state.access_token = None
 
@@ -99,6 +102,7 @@ if not st.session_state.access_token:
         col1, col2 = st.columns(2)
         with col1:
             if CLIENT_ID and CLIENT_SECRET:
+                # On utilise la bonne URL de redirection (Local ou Prod)
                 login_url = strava_auth.get_login_url(CLIENT_ID, REDIRECT_URI)
                 st.link_button("Se connecter avec Strava", login_url, type="primary")
             else:
@@ -110,27 +114,20 @@ if not st.session_state.access_token:
                 st.session_state.athlete = demo_data["athlete"]
                 st.rerun()
 
-        # 3. ZONE DE DÉPANNAGE (Pour Codespaces / Localhost)
-        st.divider()
-        with st.expander("🆘 Dépannage : La redirection échoue (Page blanche / Erreur) ?"):
-            st.warning("Si vous êtes sur Codespaces, Strava ne peut pas ouvrir 'localhost'.")
-            st.markdown("""
-            1. Regardez l'URL de la page d'erreur (celle qui commence par `localhost:8501...`).
-            2. Copiez le code qui se trouve après `code=` (ex: `251b8c...`).
-            3. Collez-le ci-dessous.
-            """)
-            manual_code = st.text_input("Coller le code Strava ici")
-            if st.button("Valider le code manuellement"):
-                if CLIENT_ID and CLIENT_SECRET and manual_code:
-                    with st.spinner("Échange du code manuel..."):
-                        token_response = strava_auth.exchange_code_for_token(CLIENT_ID, CLIENT_SECRET, manual_code)
-                        if token_response:
-                            st.session_state.access_token = token_response.get("access_token")
-                            st.session_state.athlete = token_response.get("athlete")
-                            st.success("Connexion manuelle réussie !")
-                            st.rerun()
-                else:
-                    st.error("Veuillez remplir les clés API et le code.")
+        # 3. ZONE DE DÉPANNAGE (Uniquement si on est en local pour ne pas polluer la prod)
+        if "localhost" in REDIRECT_URI:
+            st.divider()
+            with st.expander("🆘 Dépannage (Localhost uniquement)"):
+                st.warning("Si la redirection échoue sur Codespaces :")
+                manual_code = st.text_input("Coller le code Strava ici")
+                if st.button("Valider le code manuellement"):
+                    if CLIENT_ID and CLIENT_SECRET and manual_code:
+                        with st.spinner("Échange du code manuel..."):
+                            token_response = strava_auth.exchange_code_for_token(CLIENT_ID, CLIENT_SECRET, manual_code)
+                            if token_response:
+                                st.session_state.access_token = token_response.get("access_token")
+                                st.session_state.athlete = token_response.get("athlete")
+                                st.rerun()
 
 else:
     # --- DASHBOARD DU COACH ---
@@ -163,8 +160,11 @@ else:
         # 2. NETTOYAGE & ENRICHISSEMENT (PANDAS)
         df = pd.json_normalize(activities)
         
-        # Conversion des dates
+        # --- CORRECTION DATE & TIMEZONE ---
         df['start_date_local'] = pd.to_datetime(df['start_date_local'])
+        if df['start_date_local'].dt.tz is not None:
+             df['start_date_local'] = df['start_date_local'].dt.tz_localize(None)
+        
         df['week_start'] = df['start_date_local'].dt.to_period('W').apply(lambda r: r.start_time)
         
         # Conversions unités
@@ -191,7 +191,7 @@ else:
         kpi2.metric("Sorties (30j)", f"{nb_sorties}")
         kpi3.metric("Cardio Moyen", f"{int(avg_fc)} bpm")
         
-        # KPI Intelligent : Tendance Volume (Dernière semaine vs Moyenne 3 semaines avant)
+        # KPI Intelligent : Tendance Volume
         last_week = df[df['start_date_local'] > (current_date - timedelta(days=7))]
         vol_last_week = last_week['distance_km'].sum()
         avg_vol_prev = (vol_total - vol_last_week) / 3 if (vol_total - vol_last_week) > 0 else vol_last_week
@@ -204,11 +204,9 @@ else:
 
         with tab1:
             st.markdown("### Évolution du Volume")
-            # Agrégation par semaine
             weekly_vol = df.groupby('week_start')['distance_km'].sum().reset_index()
             weekly_vol = weekly_vol.sort_values('week_start')
             
-            # Graphique Plotly Barres
             fig_vol = px.bar(weekly_vol, x='week_start', y='distance_km',
                              title="Volume Hebdomadaire (km)",
                              labels={'week_start': 'Semaine', 'distance_km': 'Distance (km)'},
@@ -216,47 +214,35 @@ else:
                              color_continuous_scale='Teal')
             st.plotly_chart(fig_vol, use_container_width=True)
             
-            # Le Conseil du Coach basé sur le graph
             if delta > 20:
-                st.warning("⚠️ **Alerte Surcharge :** Tu as augmenté ton volume de plus de 20% cette semaine. Attention au risque de blessure. Prévois une semaine 'light' la semaine prochaine.")
+                st.warning("⚠️ **Alerte Surcharge :** Tu as augmenté ton volume de plus de 20% cette semaine.")
             elif delta < -20:
-                st.info("ℹ️ **Récupération :** Semaine plus légère détectée. C'est bien d'assimiler l'entraînement !")
+                st.info("ℹ️ **Récupération :** Semaine plus légère détectée.")
             else:
-                st.success("✅ **Progression Saine :** Ton volume est stable et progressif. Continue !")
+                st.success("✅ **Progression Saine :** Ton volume est stable.")
 
         with tab2:
             st.markdown("### Analyse de l'Intensité")
             col_graph, col_advice = st.columns([2, 1])
             
             with col_graph:
-                # Scatter Plot : Distance vs Allure vs Cardio
-                # Plus le point est gros, plus la sortie était longue
-                # Plus le point est rouge, plus le cardio était haut
                 if 'average_heartrate' in df.columns:
                     fig_scatter = px.scatter(df, x='start_date_local', y='pace_decimal',
                                              size='distance_km', color='average_heartrate',
-                                             color_continuous_scale='RdYlGn_r', # Rouge en haut (dur), Vert en bas (cool)
-                                             title="Distribution des séances (Taille = Distance)",
-                                             labels={'pace_decimal': 'Allure (min/km)', 'start_date_local': 'Date', 'average_heartrate': 'BPM Moyen'})
-                    
-                    # Inverser l'axe Y pour que "plus rapide" soit en haut (optionnel, mais en running souvent on préfère voir l'allure baisse)
-                    # Ici on laisse l'axe : 5 min/km est plus "haut" que 4 min/km graphiquement si on ne touche rien, c'est ok.
-                    fig_scatter.update_layout(yaxis_autorange="reversed") # En haut = plus vite (chiffre plus petit)
+                                             color_continuous_scale='RdYlGn_r',
+                                             title="Distribution des séances",
+                                             labels={'pace_decimal': 'Allure (min/km)', 'start_date_local': 'Date', 'average_heartrate': 'BPM'})
+                    fig_scatter.update_layout(yaxis_autorange="reversed")
                     st.plotly_chart(fig_scatter, use_container_width=True)
                 else:
-                    st.info("Pas de données cardiaques suffisantes pour ce graphique.")
+                    st.info("Pas de données cardiaques suffisantes.")
 
             with col_advice:
                 st.markdown("**Le regard du coach :**")
-                st.write("Ce graphique permet de voir si ton entraînement est **polarisé**.")
-                st.markdown("- **Points Verts :** Endurance fondamentale (Base foncière).")
-                st.markdown("- **Points Rouges :** Séances au seuil ou VMA.")
-                st.info("💡 Idéalement, 80% de tes points devraient être verts/jaunes et 20% oranges/rouges.")
+                st.info("💡 Cherche à polariser ton entraînement : beaucoup de vert (lent), un peu de rouge (vite), et évite le jaune (allure moyenne fatiguante).")
 
         with tab3:
             st.markdown("### Historique des sorties")
-            
-            # Préparation tableau joli
             display_df = df[['name', 'start_date_local', 'distance_km', 'moving_time', 'average_speed']].copy()
             display_df['Date'] = display_df['start_date_local'].dt.strftime('%d/%m/%Y')
             display_df['Distance'] = display_df['distance_km'].round(2).astype(str) + " km"
