@@ -38,9 +38,17 @@ st.markdown("""
     }
     .metric-insight {
         font-size: 0.85rem;
-        color: #95a5a6;
-        font-style: italic;
-        margin-top: 5px;
+        color: #576574;
+        margin-top: 8px;
+        line-height: 1.4;
+    }
+    .coach-tip {
+        background-color: #f1f8ff;
+        border-left: 4px solid #2e86de;
+        padding: 10px;
+        font-size: 0.9rem;
+        margin-top: 10px;
+        border-radius: 0 5px 5px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -441,14 +449,28 @@ else:
             col1, col2 = st.columns([2, 1])
             with col1:
                 with st.container(border=True):
-                    st.markdown("#### 🤖 Verdict du Coach")
+                    st.markdown(f"#### 🤖 Verdict du Coach")
                     st.info(f"**{verdict}**")
-                    st.caption(f"Forme (CTL): {int(last_metrics['CTL'])} | Fatigue (ATL): {int(last_metrics['ATL'])}")
+                    
+                    with st.expander("ℹ️ Comprendre mon état de forme"):
+                        st.markdown(f"""
+                        **Comment le coach calcule ça ?**
+                        
+                        1. **Ta Forme (CTL - {int(last_metrics['CTL'])})** : C'est ta "caisse", ton endurance accumulée sur les 42 derniers jours. Plus c'est haut, plus tu es solide.
+                        2. **Ta Fatigue (ATL - {int(last_metrics['ATL'])})** : C'est la charge encaissée sur les 7 derniers jours. Si elle est trop haute, tu es fatigué.
+                        3. **Ton Équilibre (TSB)** : C'est la différence (Forme - Fatigue).
+                        
+                        *Si TSB est positif (>0)* : Tu es frais et performant.
+                        *Si TSB est très négatif (<-20)* : Tu es en surcharge. Repos nécessaire pour assimiler.
+                        """)
+
             with col2:
                 with st.container(border=True):
-                    st.markdown("#### 🔋 Fraîcheur (TSB)")
+                    st.markdown("#### 🔋 Batterie (TSB)")
+                    # Indicateur visuel simple
+                    score_tsb = int(last_metrics['TSB'])
                     fig_gauge = go.Figure(go.Indicator(
-                        mode = "gauge+number", value = int(last_metrics['TSB']),
+                        mode = "gauge+number", value = score_tsb,
                         gauge = {'axis': {'range': [-50, 50]}, 
                                  'bar': {'color': "lightgray"},
                                  'steps': [{'range': [-50, -20], 'color': "red"}, 
@@ -457,6 +479,13 @@ else:
                     ))
                     fig_gauge.update_layout(height=120, margin=dict(l=20, r=20, t=20, b=20))
                     st.plotly_chart(fig_gauge, use_container_width=True)
+                    
+                    if score_tsb > 0:
+                        st.caption("🟢 **Batterie chargée.** Tu es frais, c'est le moment de faire de l'intensité ou une course.")
+                    elif score_tsb > -20:
+                        st.caption("🟠 **En charge.** Tu es en phase d'entraînement productif. Continue.")
+                    else:
+                        st.caption("🔴 **Batterie faible.** Risque de surchauffe. Lève le pied pour recharger.")
 
             # LIGNE 2 : KPI MÉTIER (Consistance, Volume, Monotonie)
             col3, col4, col5 = st.columns(3)
@@ -465,12 +494,16 @@ else:
                     st.markdown('<div class="metric-label">Consistance Hebdo</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">🔥 {consistency_streak} Sem.</div>', unsafe_allow_html=True)
                     st.markdown('<div class="metric-insight">Semaines consécutives actives</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="coach-tip">C\'est le secret n°1. Ne brise pas la chaîne !</div>', unsafe_allow_html=True)
+                    
             with col4:
                 with st.container(border=True):
                     dist_7d = df_filtered[df_filtered['start_date_local'] > (datetime.now() - timedelta(days=7))]['distance_km'].sum()
                     st.markdown('<div class="metric-label">Volume 7j</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">{int(dist_7d)} km</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Kilométrage glissant</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Sur les 7 derniers jours</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="coach-tip">Augmente de max 10% par semaine pour éviter la blessure.</div>', unsafe_allow_html=True)
+
             with col5:
                 with st.container(border=True):
                     mono = last_metrics['Monotony']
@@ -478,6 +511,10 @@ else:
                     st.markdown('<div class="metric-label">Monotonie</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value" style="color:{color}">{mono:.2f}</div>', unsafe_allow_html=True)
                     st.markdown('<div class="metric-insight">Cible < 2.0 (Variété)</div>', unsafe_allow_html=True)
+                    if mono > 2.0:
+                        st.markdown('<div class="coach-tip">⚠️ Danger : Tu fais toujours la même chose. Alterne sorties longues/lentes et courtes/rapides.</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="coach-tip">✅ Bien : Ton entraînement est varié.</div>', unsafe_allow_html=True)
 
             # LIGNE 3 : LES TOPS INDICATEURS (Cost, Power, Punch)
             col6, col7, col8 = st.columns(3)
@@ -487,18 +524,23 @@ else:
                     val_str = f"{int(cot_val)} bpm/km" if cot_val > 0 else "--"
                     st.markdown(f'<div class="metric-value">{val_str}</div>', unsafe_allow_html=True)
                     st.markdown('<div class="metric-insight">Battements payés pour 1km</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="coach-tip">C\'est ta consommation d\'essence. Plus ce chiffre baisse, plus tu deviens économe (endurant).</div>', unsafe_allow_html=True)
+            
             with col7:
                 with st.container(border=True):
                     st.markdown('<div class="metric-label">Ratio Puissance</div>', unsafe_allow_html=True)
                     val_str = f"{pwr_val:.2f} W/bpm" if pwr_val > 0 else "--"
                     st.markdown(f'<div class="metric-value">{val_str}</div>', unsafe_allow_html=True)
                     st.markdown('<div class="metric-insight">Watts par pulsation</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="coach-tip">Le rendement de ton moteur. Si ça monte, tu produis plus de force pour le même effort cardiaque.</div>', unsafe_allow_html=True)
+            
             with col8:
                 with st.container(border=True):
                     st.markdown('<div class="metric-label">Indice Punch</div>', unsafe_allow_html=True)
                     val_str = f"{int(punch_val)} m/h" if punch_val > 0 else "--"
                     st.markdown(f'<div class="metric-value">{val_str}</div>', unsafe_allow_html=True)
                     st.markdown('<div class="metric-insight">Vitesse ascensionnelle</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="coach-tip">Ta vitesse verticale. Utile en trail/rando : combien de D+ tu avales en une heure.</div>', unsafe_allow_html=True)
             
             # LIGNE 4 : SHOE MILEAGE
             with st.container(border=True):
@@ -507,12 +549,19 @@ else:
                 st.progress(pct_wear)
                 c_s1, c_s2 = st.columns([1, 4])
                 c_s1.markdown(f"**{int(primary_shoe_dist)} / {max_shoe_dist} km**")
+                
+                msg_shoe = ""
                 if pct_wear >= 1.0:
-                    c_s2.error(f"Change tes pneus ! ({primary_shoe_name})")
+                    c_s2.error(f"⚠️ **Change tes pneus !** ({primary_shoe_name})")
+                    msg_shoe = "Tes chaussures sont mortes (>800km). L'amorti ne protège plus tes articulations. Risque de blessure maximal."
                 elif pct_wear > 0.6:
                     c_s2.warning(f"Usure avancée ({primary_shoe_name})")
+                    msg_shoe = "L'amorti commence à fatiguer. Pense à alterner avec une paire neuve."
                 else:
                     c_s2.success(f"En bon état ({primary_shoe_name})")
+                    msg_shoe = "Tes chaussures sont encore fraîches. Profites-en !"
+                
+                st.caption(msg_shoe)
 
         # =================================================
         # PAGE 2 : LE MICROSCOPE (ACTIVITÉ SPÉCIFIQUE)
