@@ -14,57 +14,70 @@ import numpy as np
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
 
-# --- STYLES CSS PERSONNALISÉS (BENTO) ---
+# --- STYLES CSS PERSONNALISÉS (BENTO & CONTRASTE) ---
 st.markdown("""
 <style>
+    /* Style global des boîtes Bento */
     .bento-box {
         background-color: #ffffff;
         border: 1px solid #e0e0e0;
-        border-radius: 15px;
+        border-radius: 12px;
         padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        color: #1f2937; /* Force le texte en gris foncé pour la lisibilité */
     }
+    
+    /* Titres et chiffres */
     .metric-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #2c3e50;
+        font-size: 2rem;
+        font-weight: 800;
+        color: #111827;
+        margin: 10px 0;
     }
     .metric-label {
-        font-size: 0.9rem;
-        color: #7f8c8d;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    .metric-insight {
         font-size: 0.85rem;
-        color: #576574;
-        margin-top: 8px;
-        line-height: 1.4;
+        font-weight: 600;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
-    .coach-tip {
-        background-color: #f1f8ff;
-        border-left: 4px solid #2e86de;
-        padding: 10px;
+    
+    /* Textes explicatifs */
+    .metric-insight {
         font-size: 0.9rem;
-        margin-top: 10px;
-        border-radius: 0 5px 5px 0;
+        color: #4b5563;
+        margin-top: 5px;
+        line-height: 1.5;
+    }
+    
+    /* Bulles de conseil */
+    .coach-tip {
+        background-color: #eff6ff;
+        border-left: 4px solid #3b82f6;
+        padding: 12px;
+        font-size: 0.9rem;
+        color: #1e3a8a;
+        margin-top: 15px;
+        border-radius: 0 8px 8px 0;
     }
     .coach-warning {
-        background-color: #fff5f5;
-        border-left: 4px solid #e74c3c;
-        padding: 10px;
+        background-color: #fef2f2;
+        border-left: 4px solid #ef4444;
+        padding: 12px;
         font-size: 0.9rem;
-        margin-top: 10px;
-        border-radius: 0 5px 5px 0;
+        color: #7f1d1d;
+        margin-top: 15px;
+        border-radius: 0 8px 8px 0;
     }
     .coach-success {
         background-color: #f0fdf4;
-        border-left: 4px solid #2ecc71;
-        padding: 10px;
+        border-left: 4px solid #22c55e;
+        padding: 12px;
         font-size: 0.9rem;
-        margin-top: 10px;
-        border-radius: 0 5px 5px 0;
+        color: #14532d;
+        margin-top: 15px;
+        border-radius: 0 8px 8px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -165,19 +178,23 @@ def get_coach_verdict(tsb, acwr):
     color = "green"
     
     if acwr > 1.5:
-        verdict = "🛑 **STOP DANGER :** Risque de blessure élevé (ACWR > 1.5). Repos complet conseillé."
-        color = "red"
+        verdict = "🛑 STOP DANGER"
+        subtext = "Risque de blessure maximal. Surcharge brutale."
+        color = "#ef4444" # Rouge
     elif tsb < -20:
-        verdict = "⚠️ **Surcharge :** Tu es très fatigué (TSB < -20). Programme une séance de récup."
-        color = "orange"
+        verdict = "⚠️ SURCHARGE"
+        subtext = "Tu es fatigué. Programme une récupération."
+        color = "#f59e0b" # Orange
     elif tsb > 10:
-        verdict = "🚀 **En Forme :** Fraîcheur positive ! C'est le moment de placer une séance clé."
-        color = "green"
+        verdict = "🚀 EN FORME"
+        subtext = "Fraîcheur au top. Place une séance clé."
+        color = "#22c55e" # Vert
     else:
-        verdict = "✅ **Zone Optimale :** Bon équilibre charge/récupération. Continue le plan."
-        color = "blue"
+        verdict = "✅ OPTIMAL"
+        subtext = "Équilibre parfait. Continue le plan."
+        color = "#3b82f6" # Bleu
         
-    return verdict, color
+    return verdict, subtext, color
 
 def get_activity_streams(activity_id, access_token):
     """Récupère les données détaillées (seconde par seconde) d'une activité."""
@@ -202,7 +219,6 @@ def generate_mock_data():
     today = datetime.now()
     activities = ["Run", "Ride", "WeightTraining", "Hike"]
     
-    # IDs de chaussures fictifs
     shoe_ids = ["g123456", "g789012"] 
     
     for i in range(60):
@@ -216,12 +232,12 @@ def generate_mock_data():
             if act_type == "Run":
                 dist = random.randint(5000, 18000)
                 speed = random.uniform(2.5, 3.8)
-                gear_id = random.choice(shoe_ids) # On assigne une chaussure
-                watts = random.randint(200, 350) # Puissance course
+                gear_id = random.choice(shoe_ids) 
+                watts = random.randint(200, 350) 
             elif act_type == "Ride":
                 dist = random.randint(20000, 60000)
                 speed = random.uniform(6.0, 9.0)
-                watts = random.randint(150, 300) # Puissance vélo
+                watts = random.randint(150, 300) 
             else:
                 dist = 0
                 speed = 0
@@ -239,8 +255,8 @@ def generate_mock_data():
                 "start_date_local": date_act.isoformat(),
                 "average_heartrate": hr,
                 "average_speed": speed,
-                "average_watts": watts, # Nouveau champ
-                "gear_id": gear_id,     # Nouveau champ
+                "average_watts": watts, 
+                "gear_id": gear_id,     
                 "type": act_type,
                 "id": i
             })
@@ -345,7 +361,7 @@ else:
     if activities:
         df = pd.json_normalize(activities)
         
-        # Nettoyage & Conversion
+        # Nettoyage
         df['start_date_local'] = pd.to_datetime(df['start_date_local'])
         if df['start_date_local'].dt.tz is not None:
              df['start_date_local'] = df['start_date_local'].dt.tz_localize(None)
@@ -387,25 +403,21 @@ else:
                 st.session_state.clear()
                 st.rerun()
 
-        # Calcul Métriques Globales (pour Fatigue/Forme)
+        # Calcul Métriques
         df_daily_metrics = calculate_training_metrics(df)
         last_metrics = df_daily_metrics.iloc[-1]
         
-        # --- CALCULS SPÉCIFIQUES "TOP OF THE POP" ---
+        # --- CALCULS KPI "TOP OF THE POP" ---
         now = datetime.now()
         df_30d = df_filtered[df_filtered['start_date_local'] > (now - timedelta(days=30))].copy()
         
-        # A. Cost of Transport (Battements / km)
         cot_val = 0
         if not df_30d.empty and 'average_heartrate' in df_30d.columns:
-            # On prend uniquement les activités avec de la distance et du cardio
             mask = (df_30d['distance_km'] > 0) & (df_30d['average_heartrate'] > 0)
             if mask.any():
-                # Formule : (FC * Durée_min) / Dist_km
                 df_30d.loc[mask, 'cot'] = (df_30d['average_heartrate'] * (df_30d['moving_time'] / 60)) / df_30d['distance_km']
                 cot_val = df_30d.loc[mask, 'cot'].mean()
 
-        # B. Power Ratio (Watts / FC)
         pwr_val = 0
         if 'average_watts' in df_30d.columns and 'average_heartrate' in df_30d.columns:
             mask = (df_30d['average_heartrate'] > 0) & (df_30d['average_watts'] > 0)
@@ -413,36 +425,29 @@ else:
                 df_30d.loc[mask, 'pwr_ratio'] = df_30d['average_watts'] / df_30d['average_heartrate']
                 pwr_val = df_30d.loc[mask, 'pwr_ratio'].mean()
 
-        # C. Punch Index (Mètres / heure)
         punch_val = 0
         mask_punch = (df_30d['moving_time'] > 0)
         if mask_punch.any():
             df_30d.loc[mask_punch, 'punch'] = df_30d['total_elevation_gain'] / (df_30d['moving_time'] / 3600)
             punch_val = df_30d.loc[mask_punch, 'punch'].mean()
 
-        # D. Shoe Mileage
         primary_shoe_dist = 0
         primary_shoe_name = "Aucune"
-        max_shoe_dist = 800 # Seuil
+        max_shoe_dist = 800
         if 'gear_id' in df.columns:
-            # On cherche l'équipement le plus utilisé dans les activités filtrées (ou Run par défaut)
             df_gear = df[df['type'] == 'Run'] if not df[df['type'] == 'Run'].empty else df
             if not df_gear.empty and 'gear_id' in df_gear.columns:
-                 # Group by gear_id et somme distance
                  gear_stats = df_gear.groupby('gear_id')['distance_km'].sum().sort_values(ascending=False)
                  if not gear_stats.empty:
                      primary_shoe_id = gear_stats.index[0]
                      primary_shoe_dist = gear_stats.iloc[0]
                      primary_shoe_name = f"ID: {primary_shoe_id}" if primary_shoe_id else "Inconnu"
 
-        # E. Consistance Hebdo
         consistency_streak = 0
         if not df.empty:
-            # On prend toutes les activités pour la consistance
             active_weeks = df['start_date_local'].dt.to_period('W').sort_values(ascending=False).unique()
             if len(active_weeks) > 0:
                 current_w = pd.Timestamp.now().to_period('W')
-                # Si la semaine dernière ou cette semaine est active, on commence à compter
                 if (current_w - active_weeks[0]).n <= 1:
                     consistency_streak = 1
                     for i in range(1, len(active_weeks)):
@@ -459,192 +464,178 @@ else:
         with tab_cockpit:
             st.markdown("### 🧭 Vue d'ensemble")
             
-            verdict, verdict_color = get_coach_verdict(last_metrics['TSB'], last_metrics['ACWR'])
+            verdict_title, verdict_sub, verdict_col_hex = get_coach_verdict(last_metrics['TSB'], last_metrics['ACWR'])
             
-            # LIGNE 1 : VERDICT & FRAICHEUR
-            col1, col2 = st.columns([2, 1])
+            # LIGNE 1 : VERDICT & BATTERIE (Alignés)
+            col1, col2 = st.columns(2)
+            
             with col1:
-                with st.container(border=True):
-                    st.markdown(f"#### 🤖 Verdict du Coach")
-                    st.info(f"**{verdict}**")
-                    st.caption("Le verdict croise ta fatigue court terme et ta forme long terme.")
+                # Bento Verdict avec bordure colorée dynamique
+                st.markdown(f"""
+                <div class="bento-box" style="border-left: 8px solid {verdict_col_hex};">
+                    <div class="metric-label">🤖 Verdict du Coach</div>
+                    <div class="metric-value" style="color: {verdict_col_hex}">{verdict_title}</div>
+                    <div class="metric-insight">{verdict_sub}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                with st.expander("ℹ️ Comprendre le Verdict"):
+                    st.markdown("""
+                    **Comment le coach décide ?**
+                    Il croise ta fatigue court terme (7 jours) avec ta forme long terme (42 jours).
+                    * **Optimal :** Tu progresses sans t'épuiser.
+                    * **Surcharge :** Tu en fais trop, trop vite. Risque de blessure.
+                    * **En Forme :** Tu es frais, prêt pour une perf.
+                    """)
 
             with col2:
-                with st.container(border=True):
-                    st.markdown("#### 🔋 Batterie (TSB)")
-                    # Indicateur visuel simple
-                    score_tsb = int(last_metrics['TSB'])
-                    fig_gauge = go.Figure(go.Indicator(
-                        mode = "gauge+number", value = score_tsb,
-                        gauge = {'axis': {'range': [-50, 50]}, 
-                                 'bar': {'color': "lightgray"},
-                                 'steps': [{'range': [-50, -20], 'color': "red"}, 
-                                           {'range': [-20, 10], 'color': "lightgreen"},
-                                           {'range': [10, 50], 'color': "cyan"}]}
-                    ))
-                    fig_gauge.update_layout(height=120, margin=dict(l=20, r=20, t=20, b=20))
-                    st.plotly_chart(fig_gauge, use_container_width=True)
+                # Bento Batterie
+                tsb_val = int(last_metrics['TSB'])
+                # Couleur de la batterie selon l'état
+                batt_color = "#22c55e" if tsb_val > 0 else "#f59e0b"
+                if tsb_val < -20: batt_color = "#ef4444"
 
-            # --- NOUVELLE SECTION : FORME vs FATIGUE ---
+                with st.container(border=True): # Utilisation container Streamlit standard pour y mettre le graph Plotly
+                    col_b1, col_b2 = st.columns([2, 1])
+                    with col_b1:
+                        st.markdown(f'<div class="metric-label">🔋 Batterie (TSB)</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-value" style="color:{batt_color}">{tsb_val}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-insight">Niveau d\'énergie</div>', unsafe_allow_html=True)
+                    with col_b2:
+                         fig_gauge = go.Figure(go.Indicator(
+                            mode = "gauge", value = tsb_val,
+                            gauge = {'axis': {'range': [-50, 50], 'visible': False}, 
+                                     'bar': {'color': batt_color},
+                                     'bgcolor': "white",
+                                     'steps': [{'range': [-50, 50], 'color': "#f3f4f6"}]} # Fond gris clair
+                        ))
+                         fig_gauge.update_layout(height=80, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
+                         st.plotly_chart(fig_gauge, use_container_width=True)
+                
+                with st.expander("ℹ️ Comprendre la Batterie"):
+                    st.markdown("""
+                    **L'Indice de Fraîcheur (TSB)**
+                    C'est la différence entre ta forme (CTL) et ta fatigue (ATL).
+                    * **Positif (+)** : Ta batterie est pleine. Tu es frais.
+                    * **Négatif (-)** : Tu puises dans tes réserves. C'est normal à l'entraînement, mais il faut recharger (repos) de temps en temps.
+                    * **< -20** : Zone rouge. Batterie critique. Repos obligatoire.
+                    """)
+
+            # --- SECTION 2 : FORME vs FATIGUE ---
             st.markdown("### 🏗️ Construction de la Performance")
             col_f1, col_f2 = st.columns(2)
             
-            # CALCULS & LOGIQUE CONSEILS
             ctl_val = int(last_metrics['CTL'])
             atl_val = int(last_metrics['ATL'])
             
-            # Conseil Forme
-            msg_forme = ""
-            if ctl_val < 30: msg_forme = "Niveau débutant/reprise. La régularité est ta priorité n°1."
-            elif ctl_val < 60: msg_forme = "Bonne base foncière. Tu peux commencer à intégrer de l'intensité."
-            else: msg_forme = "Machine de guerre ! Tu as une grosse caisse pour encaisser les charges lourdes."
+            # Conseils dynamiques
+            if ctl_val < 40: tip_forme = "Phase de construction. Vise la régularité."
+            else: tip_forme = "Base solide. Tu peux encaisser de l'intensité."
 
-            # Conseil Fatigue
-            msg_fatigue = ""
-            style_fatigue = "coach-tip" # Bleu par défaut
             if atl_val > ctl_val + 20: 
-                msg_fatigue = "⚠️ **Alerte Rouge :** Ta charge récente explose ta moyenne. Risque de blessure imminent. Ralentis !"
-                style_fatigue = "coach-warning"
-            elif atl_val < ctl_val - 20: 
-                msg_fatigue = "💤 **Sous-régime :** Tu te reposes trop. Ton niveau de forme va commencer à chuter."
+                tip_fatigue = "⚠️ **Danger :** Charge brutale. Ralentis !"
+                css_fatigue = "coach-warning"
+                border_fatigue = "#ef4444"
+            elif atl_val < ctl_val - 10:
+                tip_fatigue = "💤 **Repos :** Tu es en phase d'assimilation."
+                css_fatigue = "coach-tip"
+                border_fatigue = "#3b82f6"
             else:
-                msg_fatigue = "✅ **Zone Verte :** Ta fatigue est contrôlée par rapport à ta forme. Tu peux pousser."
-                style_fatigue = "coach-success"
+                tip_fatigue = "✅ **Productif :** Charge adaptée à ta forme."
+                css_fatigue = "coach-success"
+                border_fatigue = "#22c55e"
 
             with col_f1:
                 st.markdown(f"""
-                <div class="bento-box" style="border-left: 5px solid #2ecc71;">
+                <div class="bento-box" style="border-left: 5px solid #22c55e;">
                     <div class="metric-label">🏃 Forme (CTL)</div>
                     <div class="metric-value">{ctl_val}</div>
-                    <div class="metric-insight">Moyenne charge 42 jours</div>
+                    <div class="metric-insight">Ta "Caisse" (Moyenne 42j)</div>
                     <div class="coach-tip">
-                        <strong>C'est quoi ?</strong> Ta "caisse". Plus ce chiffre est haut, plus tu es endurant et solide.<br>
-                        <strong>Conseil :</strong> {msg_forme}
+                        <strong>Conseil :</strong> {tip_forme}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
             
             with col_f2:
-                # Couleur dynamique bordure
-                border_col = "#e74c3c" if atl_val > ctl_val + 20 else "#f1c40f"
                 st.markdown(f"""
-                <div class="bento-box" style="border-left: 5px solid {border_col};">
+                <div class="bento-box" style="border-left: 5px solid {border_fatigue};">
                     <div class="metric-label">💤 Fatigue (ATL)</div>
                     <div class="metric-value">{atl_val}</div>
-                    <div class="metric-insight">Moyenne charge 7 jours</div>
-                    <div class="{style_fatigue}">
-                        <strong>C'est quoi ?</strong> La fatigue accumulée cette semaine.<br>
-                        <strong>Conseil :</strong> {msg_fatigue}
+                    <div class="metric-insight">Ta Charge Récente (Moyenne 7j)</div>
+                    <div class="{css_fatigue}">
+                        <strong>Conseil :</strong> {tip_fatigue}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # GRAPHIQUE ÉVOLUTION (60 JOURS)
-            st.markdown("#### 📉 Le Match : Forme vs Fatigue (60 derniers jours)")
-            
-            # Préparation données graph
-            now = datetime.now()
-            date_60d_ago = now - timedelta(days=60)
+            # GRAPHIQUE ÉVOLUTION
+            st.markdown("#### 📉 Tendance sur 60 jours")
+            date_60d_ago = datetime.now() - timedelta(days=60)
             df_chart = df_daily_metrics[df_daily_metrics.index > date_60d_ago].copy()
             
             if not df_chart.empty:
                 fig_ff = go.Figure()
-                # Zone Forme (Verte pleine)
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['CTL'], fill='tozeroy', 
-                                            name='Forme (CTL)', line=dict(color='#2ecc71')))
-                # Ligne Fatigue (Rouge/Orange)
+                                            name='Forme (CTL)', line=dict(color='#22c55e')))
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['ATL'], 
-                                            name='Fatigue (ATL)', line=dict(color='#e67e22', width=2, dash='dot')))
-                
-                fig_ff.update_layout(
-                    height=300, 
-                    margin=dict(l=0, r=0, t=10, b=0),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
+                                            name='Fatigue (ATL)', line=dict(color='#f97316', width=2)))
+                fig_ff.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0), 
+                                     legend=dict(orientation="h", y=1.1))
                 st.plotly_chart(fig_ff, use_container_width=True)
             else:
-                st.caption("Pas assez d'historique pour afficher la courbe.")
+                st.info("Pas assez de données pour afficher l'historique.")
 
             st.divider()
 
-            # LIGNE 2 : KPI MÉTIER (Consistance, Volume, Monotonie)
+            # LIGNE 3 : KPIs SECONDAIRES
             col3, col4, col5 = st.columns(3)
             with col3:
                 with st.container(border=True):
-                    st.markdown('<div class="metric-label">Consistance Hebdo</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-label">Consistance</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">🔥 {consistency_streak} Sem.</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Semaines consécutives actives</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="coach-tip">C\'est le secret n°1. Ne brise pas la chaîne !</div>', unsafe_allow_html=True)
-                    
+                    st.markdown('<div class="metric-insight">Série en cours</div>', unsafe_allow_html=True)
             with col4:
                 with st.container(border=True):
                     dist_7d = df_filtered[df_filtered['start_date_local'] > (datetime.now() - timedelta(days=7))]['distance_km'].sum()
                     st.markdown('<div class="metric-label">Volume 7j</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-value">{int(dist_7d)} km</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Sur les 7 derniers jours</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="coach-tip">Augmente de max 10% par semaine pour éviter la blessure.</div>', unsafe_allow_html=True)
-
+                    st.markdown('<div class="metric-insight">Glissant sur 7 jours</div>', unsafe_allow_html=True)
             with col5:
                 with st.container(border=True):
                     mono = last_metrics['Monotony']
-                    color = "red" if mono > 2.0 else "#27ae60"
+                    col_mono = "#ef4444" if mono > 2.0 else "#22c55e"
                     st.markdown('<div class="metric-label">Monotonie</div>', unsafe_allow_html=True)
-                    st.markdown(f'<div class="metric-value" style="color:{color}">{mono:.2f}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Cible < 2.0 (Variété)</div>', unsafe_allow_html=True)
-                    if mono > 2.0:
-                        st.markdown('<div class="coach-tip">⚠️ Danger : Tu fais toujours la même chose. Alterne sorties longues/lentes et courtes/rapides.</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="coach-tip">✅ Bien : Ton entraînement est varié.</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value" style="color:{col_mono}">{mono:.2f}</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Cible < 2.0</div>', unsafe_allow_html=True)
 
-            # LIGNE 3 : LES TOPS INDICATEURS (Cost, Power, Punch)
+            # LIGNE 4 : METRIQUES AVANCÉES
             col6, col7, col8 = st.columns(3)
             with col6:
                 with st.container(border=True):
-                    st.markdown('<div class="metric-label">Coût Transport</div>', unsafe_allow_html=True)
-                    val_str = f"{int(cot_val)} bpm/km" if cot_val > 0 else "--"
-                    st.markdown(f'<div class="metric-value">{val_str}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Battements payés pour 1km</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="coach-tip">C\'est ta consommation d\'essence. Plus ce chiffre baisse, plus tu deviens économe (endurant).</div>', unsafe_allow_html=True)
-            
+                    st.markdown('<div class="metric-label">Coût Cardio</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value">{int(cot_val) if cot_val else "--"}</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">bpm / km</div>', unsafe_allow_html=True)
             with col7:
                 with st.container(border=True):
-                    st.markdown('<div class="metric-label">Ratio Puissance</div>', unsafe_allow_html=True)
-                    val_str = f"{pwr_val:.2f} W/bpm" if pwr_val > 0 else "--"
-                    st.markdown(f'<div class="metric-value">{val_str}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Watts par pulsation</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="coach-tip">Le rendement de ton moteur. Si ça monte, tu produis plus de force pour le même effort cardiaque.</div>', unsafe_allow_html=True)
-            
+                    st.markdown('<div class="metric-label">Puissance</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value">{pwr_val:.1f}</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">Watts / bpm</div>', unsafe_allow_html=True)
             with col8:
                 with st.container(border=True):
-                    st.markdown('<div class="metric-label">Indice Punch</div>', unsafe_allow_html=True)
-                    val_str = f"{int(punch_val)} m/h" if punch_val > 0 else "--"
-                    st.markdown(f'<div class="metric-value">{val_str}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="metric-insight">Vitesse ascensionnelle</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="coach-tip">Ta vitesse verticale. Utile en trail/rando : combien de D+ tu avales en une heure.</div>', unsafe_allow_html=True)
-            
-            # LIGNE 4 : SHOE MILEAGE
+                    st.markdown('<div class="metric-label">Punch</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-value">{int(punch_val) if punch_val else "--"}</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="metric-insight">m / heure (D+)</div>', unsafe_allow_html=True)
+
+            # SHOES
             with st.container(border=True):
-                st.markdown("#### 👟 État du Matériel (Chaussure Principale)")
-                pct_wear = min(primary_shoe_dist / max_shoe_dist, 1.0)
-                st.progress(pct_wear)
-                c_s1, c_s2 = st.columns([1, 4])
-                c_s1.markdown(f"**{int(primary_shoe_dist)} / {max_shoe_dist} km**")
-                
-                msg_shoe = ""
-                if pct_wear >= 1.0:
-                    c_s2.error(f"⚠️ **Change tes pneus !** ({primary_shoe_name})")
-                    msg_shoe = "Tes chaussures sont mortes (>800km). L'amorti ne protège plus tes articulations. Risque de blessure maximal."
-                elif pct_wear > 0.6:
-                    c_s2.warning(f"Usure avancée ({primary_shoe_name})")
-                    msg_shoe = "L'amorti commence à fatiguer. Pense à alterner avec une paire neuve."
-                else:
-                    c_s2.success(f"En bon état ({primary_shoe_name})")
-                    msg_shoe = "Tes chaussures sont encore fraîches. Profites-en !"
-                
-                st.caption(msg_shoe)
+                 st.markdown("#### 👟 Matériel")
+                 pct = min(primary_shoe_dist / max_shoe_dist, 1.0)
+                 st.progress(pct)
+                 st.caption(f"{int(primary_shoe_dist)} km parcourus avec {primary_shoe_name}")
 
         # =================================================
-        # PAGE 2 : LE MICROSCOPE (ACTIVITÉ SPÉCIFIQUE)
+        # PAGE 2 : MICROSCOPE
         # =================================================
         with tab_micro:
             st.markdown("### 🔬 Analyse détaillée d'une séance")
