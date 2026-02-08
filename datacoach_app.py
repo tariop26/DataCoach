@@ -9,15 +9,38 @@ from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
 import math
+import numpy as np
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
+
+# --- STYLES CSS PERSONNALISÉS (BENTO) ---
+st.markdown("""
+<style>
+    .bento-box {
+        background-color: #f0f2f6;
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .big-stat {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #1f77b4;
+    }
+    .sub-stat {
+        font-size: 1rem;
+        color: #666;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- CONSTANTES & CONFIG ---
 GOALS_FILE = "goals.json"
 REDIRECT_URI = "http://localhost:8501" 
 
-# --- FONCTIONS UTILITAIRES (LOGIQUE MÉTIER) ---
+# --- FONCTIONS UTILITAIRES (LOGIQUE MÉTIER & CALCULS) ---
 
 def load_goals():
     if os.path.exists(GOALS_FILE):
@@ -47,97 +70,114 @@ def calculate_pace(speed_ms):
     return f"{minutes}'{seconds:02d}''/km"
 
 def calculate_trimp(duration_min, avg_hr, max_hr=190, rest_hr=60):
-    """Calcul approximatif du Training Impulse (Charge interne)"""
-    if not avg_hr or pd.isna(avg_hr): return 0
+    """Calcul du Training Impulse (Charge interne - Bannister)"""
+    if not avg_hr or pd.isna(avg_hr) or avg_hr == 0: return 0
     hr_reserve = max_hr - rest_hr
     hr_fraction = (avg_hr - rest_hr) / hr_reserve
-    # Formule de Banister simplifiée pour homme
-    return int(duration_min * hr_fraction * 0.64 * math.exp(1.92 * hr_fraction))
+    # Formule simplifiée homme
+    trimp = duration_min * hr_fraction * 0.64 * math.exp(1.92 * hr_fraction)
+    return int(trimp)
 
-def analyze_goal_adherence(goal_type, df_recent, vol_total):
+def calculate_training_metrics(df):
     """
-    Le Cerveau du Coach : Compare la data réelle aux standards de l'objectif.
-    Retourne une liste de conseils.
+    Calcule les métriques avancées sur l'historique :
+    - Charge journalière (Daily Load)
+    - ATL (Fatigue 7j)
+    - CTL (Forme 42j)
+    - TSB (Fraîcheur)
+    - ACWR (Ratio Charge Aiguë/Chronique)
+    - Monotonie
     """
-    advice = []
-    status = "green" # green, orange, red
+    if df.empty: return pd.DataFrame()
     
-    # KPIs récents
-    nb_sorties = len(df_recent)
-    avg_hr = df_recent['average_heartrate'].mean() if 'average_heartrate' in df_recent else 0
-    long_run = df_recent['distance_km'].max() if not df_recent.empty else 0
+    # 1. Resampling par jour pour gérer les jours de repos (Load = 0)
+    df_daily = df.set_index('start_date_local').resample('D').agg({
+        'trimp': 'sum',
+        'distance_km': 'sum',
+        'duration_h': 'sum'
+    }).fillna(0)
     
-    # 1. LOGIQUE MARATHON
-    if goal_type == "Prépa Marathon":
-        if vol_total < 80: # Moins de 20km/semaine en moy
-            advice.append("⚠️ **Volume critique :** Pour un marathon, ton volume mensuel est trop faible. Vise au moins 30-40km/semaine pour finir.")
-            status = "red"
-        elif vol_total < 160:
-            advice.append("ℹ️ **Volume :** Tu es sur une base correcte, mais n'hésite pas à augmenter progressivement.")
+    # 2. Moyennes glissantes
+    df_daily['ATL'] = df_daily['trimp'].rolling(window=7, min_periods=1).mean()  # Fatigue (Acute)
+    df_daily['CTL'] = df_daily['trimp'].rolling(window=42, min_periods=1).mean() # Forme (Chronic)
+    df_daily['TSB'] = df_daily['CTL'] - df_daily['ATL'] # Fraîcheur (Training Stress Balance)
+    
+    # 3. ACWR (Charge 7j / Moyenne Charge 28j)
+    # Note : On utilise souvent des moyennes exponentielles, ici moyenne simple pour MVP
+    load_7d = df_daily['trimp'].rolling(window=7, min_periods=1).sum()
+    avg_load_28d = df_daily['trimp'].rolling(window=28, min_periods=1).mean() * 7 # Ramené à la semaine
+    
+    # Éviter la division par zéro
+    df_daily['ACWR'] = load_7d / avg_load_28d.replace(0, 1)
+    
+    # 4. Monotonie (Moyenne Charge Hebdo / Écart Type Charge Hebdo)
+    rolling_mean_7d = df_daily['trimp'].rolling(window=7, min_periods=1).mean()
+    rolling_std_7d = df_daily['trimp'].rolling(window=7, min_periods=1).std()
+    df_daily['Monotony'] = rolling_mean_7d / rolling_std_7d.replace(0, 1)
+    
+    return df_daily
+
+def get_coach_verdict(tsb, acwr):
+    """Génère le verdict du coach basé sur le TSB et l'ACWR"""
+    verdict = ""
+    color = "green"
+    
+    if acwr > 1.5:
+        verdict = "🛑 **STOP DANGER :** Risque de blessure élevé (ACWR > 1.5). Surcharge brutale détectée. Repos complet conseillé."
+        color = "red"
+    elif tsb < -20:
+        verdict = "⚠️ **Surcharge :** Tu es très fatigué (TSB < -20). Programme une séance de récupération active ou repos."
+        color = "orange"
+    elif tsb > 10:
+        verdict = "🚀 **En Forme :** Fraîcheur positive ! C'est le moment de placer une séance clé (VMA ou Seuil)."
+        color = "green"
+    else:
+        verdict = "✅ **Zone Optimale :** Bon équilibre charge/récupération. Continue le plan."
+        color = "blue"
         
-        if long_run < 15:
-            advice.append("⚠️ **Sortie Longue :** Aucune sortie > 15km détectée ce mois-ci. La sortie longue est la clé du marathon !")
-            status = "orange"
-        else:
-            advice.append("✅ **Sortie Longue :** Bravo, tu as validé une sortie de {:.1f}km.".format(long_run))
-
-    # 2. LOGIQUE PERTE DE POIDS
-    elif goal_type == "Perte de poids":
-        if nb_sorties < 8: # Moins de 2x par semaine
-            advice.append("💡 **Fréquence :** Pour la perte de poids, la régularité prime sur l'intensité. Essaie de courir 3x/semaine, même 30min.")
-            status = "orange"
-        if avg_hr > 155:
-            advice.append("🔥 **Intensité :** Ton cardio moyen est haut. Pour brûler des graisses (lipolyse), ralentis pour rester en aisance respiratoire (Zone 2).")
-        else:
-            advice.append("✅ **Intensité :** Parfait, tu cours à une allure modérée idéale pour le métabolisme.")
-
-    # 3. LOGIQUE PERFORMANCE (10km / Semi)
-    elif "Prépa" in goal_type: # 10km ou Semi
-        if nb_sorties > 12:
-            advice.append("✅ **Volume :** Belle régularité !")
-        else:
-            advice.append("💡 **Volume :** Essaie d'ajouter une petite sortie 'footing' de 30min pour augmenter ta caisse.")
-
-    # Conseil générique si vide
-    if not advice:
-        advice.append("📊 **Analyse :** Continue d'accumuler de la donnée pour que je puisse affiner mes conseils.")
-    
-    return advice, status
+    return verdict, color
 
 def generate_mock_data():
     data = []
     today = datetime.now()
     activities = ["Run", "Ride", "WeightTraining", "Hike"]
     
-    for i in range(40):
-        date_act = today - timedelta(days=random.randint(0, 60))
-        act_type = random.choice(activities)
-        
-        # Logique spécifique par sport pour réalisme
-        if act_type == "Run":
-            dist = random.randint(5000, 22000)
-            speed = random.uniform(2.5, 3.5) if dist > 15000 else random.uniform(3.0, 4.2)
-        elif act_type == "Ride":
-            dist = random.randint(20000, 80000)
-            speed = random.uniform(5.5, 9.0) # Vitesse vélo plus élevée
-        else:
-            dist = 0
-            speed = 0
+    # Génération sur 60 jours pour avoir l'historique CTL (42j)
+    for i in range(60):
+        # On simule un jour sur deux environ, ou des blocs
+        if random.random() > 0.3: 
+            date_act = today - timedelta(days=i)
+            act_type = random.choice(["Run", "Run", "Run", "Ride"]) # Plus de run
             
-        duration = random.randint(1800, 7200)
-        hr = random.randint(110, 175)
-        
-        data.append({
-            "name": f"{act_type} - Session #{40-i}",
-            "distance": dist,
-            "moving_time": duration,
-            "total_elevation_gain": random.randint(50, 1200),
-            "start_date_local": date_act.isoformat(),
-            "average_heartrate": hr,
-            "average_speed": speed,
-            "type": act_type,
-            "id": i # Fake ID
-        })
+            if act_type == "Run":
+                dist = random.randint(5000, 18000)
+                speed = random.uniform(2.5, 3.8) 
+            elif act_type == "Ride":
+                dist = random.randint(20000, 60000)
+                speed = random.uniform(6.0, 9.0)
+            else:
+                dist = 0
+                speed = 0
+                
+            duration = random.randint(1800, 5400)
+            hr = random.randint(120, 170)
+            
+            # Simulation d'une surcharge récente pour tester les jauges
+            if i < 7: 
+                duration *= 1.5 # On force un peu sur la dernière semaine
+            
+            data.append({
+                "name": f"{act_type} - J-{i}",
+                "distance": dist,
+                "moving_time": duration,
+                "total_elevation_gain": random.randint(50, 800),
+                "start_date_local": date_act.isoformat(),
+                "average_heartrate": hr,
+                "average_speed": speed,
+                "type": act_type,
+                "id": i
+            })
+    
     data.sort(key=lambda x: x['start_date_local'], reverse=True)
     return data
 
@@ -161,7 +201,7 @@ if "access_token" not in st.session_state: st.session_state.access_token = None
 
 # --- UI HEADER ---
 st.title("🏃‍♂️ Smart Run Coach")
-st.markdown("**Data Coach :** *L'intelligence artificielle au service de ta sueur.*")
+st.markdown("**Data Coach :** *Analyse scientifique de ta performance.*")
 
 # =========================================================
 # LOGIQUE PRINCIPALE
@@ -190,13 +230,12 @@ if not st.session_state.access_token:
             else:
                 st.info("👈 Config manquante")
         with col2:
-            if st.button("🛠️ Mode Démo (Multi-sports)"):
+            if st.button("🛠️ Mode Démo (Données 60j)"):
                 demo_data = strava_auth.get_demo_token()
                 st.session_state.access_token = demo_data["access_token"]
                 st.session_state.athlete = demo_data["athlete"]
                 st.rerun()
         
-        # Dépannage localhost
         if "localhost" in REDIRECT_URI:
             with st.expander("🆘 Dépannage Codespaces"):
                 manual_code = st.text_input("Code Strava")
@@ -215,11 +254,9 @@ else:
     goals_db = load_goals()
     user_goal = goals_db.get(athlete_id, {})
     
-    # --- SIDEBAR : PROFIL & FILTRES ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header(f"👤 {athlete.get('firstname', 'Athlète')}")
-        
-        # Sélecteur d'objectif
         with st.expander("🎯 Mon Objectif", expanded=not bool(user_goal)):
             with st.form("goal_form"):
                 goal_types = ["Entretien / Plaisir", "Prépa Marathon", "Prépa Semi", "Prépa 10km", "Perte de poids", "Ultra / Trail"]
@@ -230,12 +267,7 @@ else:
                     save_goal(athlete_id, {"type": selected_type, "note": custom_note})
                     st.success("Enregistré")
                     st.rerun()
-        
         st.divider()
-        st.subheader("Filtres")
-        # Le filtre sera rempli après chargement des données
-        filter_container = st.container()
-        
         if st.button("Déconnexion"):
             st.session_state.clear()
             st.rerun()
@@ -245,7 +277,7 @@ else:
         activities = generate_mock_data()
     else:
         headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
-        params = {"per_page": 100} # On prend plus d'historique
+        params = {"per_page": 200} # Besoin de beaucoup d'historique pour CTL (42j)
         try:
             r = requests.get("https://www.strava.com/api/v3/athlete/activities", headers=headers, params=params)
             activities = r.json() if r.status_code == 200 else []
@@ -254,136 +286,273 @@ else:
     if activities:
         df = pd.json_normalize(activities)
         
-        # Nettoyage
+        # Nettoyage & Conversion
         df['start_date_local'] = pd.to_datetime(df['start_date_local'])
         if df['start_date_local'].dt.tz is not None:
              df['start_date_local'] = df['start_date_local'].dt.tz_localize(None)
-        df['week_start'] = df['start_date_local'].dt.to_period('W').apply(lambda r: r.start_time)
         
-        # Calculs unitaires
         if 'distance' in df.columns: df['distance_km'] = df['distance'] / 1000
         else: df['distance_km'] = 0
         df['duration_h'] = df['moving_time'] / 3600
         df['pace_decimal'] = df['average_speed'].apply(lambda x: 16.666666666667 / x if x > 0 else None)
         
-        # --- FILTRE TYPE D'ACTIVITÉ (SIDEBAR) ---
-        all_types = list(df['type'].unique())
-        with filter_container:
-            # Par défaut "Run" si dispo, sinon "Tous"
-            def_idx = all_types.index("Run") if "Run" in all_types else 0
-            selected_activity_type = st.selectbox("Sport analysé", ["Tous"] + all_types, index=def_idx+1 if "Run" in all_types else 0)
+        # Calcul du TRIMP pour chaque activité
+        df['trimp'] = df.apply(lambda row: calculate_trimp(row['moving_time']/60, row.get('average_heartrate', 0)), axis=1)
         
-        # Application du filtre
-        if selected_activity_type != "Tous":
-            df_filtered = df[df['type'] == selected_activity_type].copy()
-        else:
-            df_filtered = df.copy()
-
-        # --- 2. ANALYSE MACRO (Derniers 30 jours) ---
-        st.subheader(f"📊 Bilan {selected_activity_type} & Coaching")
+        # Calcul des Métriques Avancées (TSB, ACWR...) sur l'historique complet
+        df_daily = calculate_training_metrics(df)
         
-        # Période
-        now = datetime.now()
-        df_30d = df_filtered[df_filtered['start_date_local'] > (now - timedelta(days=30))]
+        # Dernières valeurs connues (Aujourd'hui ou dernier jour d'activité)
+        last_metrics = df_daily.iloc[-1]
         
-        # KPIs
-        c1, c2, c3, c4 = st.columns(4)
-        vol_30 = df_30d['distance_km'].sum()
-        time_30 = df_30d['duration_h'].sum()
-        count_30 = len(df_30d)
-        trimp_30 = df_30d.apply(lambda row: calculate_trimp(row['moving_time']/60, row.get('average_heartrate', 0)), axis=1).sum()
-        
-        c1.metric("Volume (30j)", f"{int(vol_30)} km")
-        c2.metric("Temps (30j)", f"{int(time_30)}h")
-        c3.metric("Sorties", f"{count_30}")
-        c4.metric("Charge (TRIMP)", f"{int(trimp_30)}")
-        
-        # --- 3. LE CERVEAU DU COACH (Analyse liée à l'objectif) ---
-        if user_goal:
-            current_goal = user_goal.get("type", "Plaisir")
-            advice_list, status_color = analyze_goal_adherence(current_goal, df_30d, vol_30)
-            
-            with st.container(border=True):
-                st.markdown(f"### 🧠 Analyse Coach : Objectif {current_goal}")
-                for msg in advice_list:
-                    st.write(msg)
-        else:
-            st.info("👈 Définis ton objectif dans la barre latérale pour avoir des conseils personnalisés.")
+        # --- STRUCTURE ONGLET (4 Pages) ---
+        tab_cockpit, tab_micro, tab_labo, tab_doc = st.tabs([
+            "🚀 Cockpit (Aujourd'hui)", 
+            "🔬 Microscope (Dernière Séance)", 
+            "🧪 Laboratoire (Tendances)", 
+            "🩺 Cabinet du Doc (Santé)"
+        ])
 
-        # --- 4. ONGLETS DÉTAILLÉS ---
-        tab1, tab2 = st.tabs(["📈 Progression & Volume", "🔎 Analyse d'une Séance"])
-        
-        with tab1:
-            # Graphique Volume Hebdo
-            weekly_vol = df_filtered.groupby('week_start')['distance_km'].sum().reset_index().sort_values('week_start')
-            fig = px.bar(weekly_vol, x='week_start', y='distance_km', title="Volume Hebdomadaire", color='distance_km', color_continuous_scale='Blues')
-            st.plotly_chart(fig, use_container_width=True)
+        # =================================================
+        # PAGE 1 : LE COCKPIT (BENTO GRID)
+        # =================================================
+        with tab_cockpit:
+            st.markdown("### 🧭 Où j'en suis aujourd'hui ?")
             
-            # Scatter Plot Intensité
-            if 'average_heartrate' in df_filtered.columns and not df_filtered['average_heartrate'].isnull().all():
-                fig2 = px.scatter(df_filtered, x='start_date_local', y='pace_decimal', 
-                                  size='distance_km', color='average_heartrate',
-                                  color_continuous_scale='RdYlGn_r', title="Intensité des séances (Taille=Dist, Coul=FC)")
-                fig2.update_layout(yaxis_autorange="reversed", yaxis_title="Allure (min/km)")
-                st.plotly_chart(fig2, use_container_width=True)
-            else:
-                st.info("Pas assez de données cardiaques pour le graphique d'intensité.")
+            verdict, verdict_color = get_coach_verdict(last_metrics['TSB'], last_metrics['ACWR'])
+            
+            # Layout Bento : Ligne 1
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                with st.container(border=True):
+                    st.markdown(f"#### 🤖 Le Verdict du Coach")
+                    st.info(f"**{verdict}**")
+                    st.markdown(f"""
+                    * **Forme (CTL 42j) :** {int(last_metrics['CTL'])} (Ta caisse)
+                    * **Fatigue (ATL 7j) :** {int(last_metrics['ATL'])} (Ta charge récente)
+                    * **Indice de Fraîcheur (TSB) :** {int(last_metrics['TSB'])}
+                    """)
+            
+            with col2:
+                with st.container(border=True):
+                    st.markdown("#### 🔋 Jauge de Fraîcheur")
+                    fig_gauge = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = int(last_metrics['TSB']),
+                        title = {'text': "TSB"},
+                        gauge = {
+                            'axis': {'range': [-50, 50]},
+                            'bar': {'color': "lightgray"},
+                            'steps': [
+                                {'range': [-50, -20], 'color': "red"}, # Fatigue excessive
+                                {'range': [-20, 10], 'color': "lightgreen"}, # Zone maintien
+                                {'range': [10, 50], 'color': "cyan"}], # Fraîcheur
+                            'threshold': {
+                                'line': {'color': "black", 'width': 4},
+                                'thickness': 0.75,
+                                'value': int(last_metrics['TSB'])}
+                        }
+                    ))
+                    fig_gauge.update_layout(height=150, margin=dict(l=20, r=20, t=30, b=20))
+                    st.plotly_chart(fig_gauge, use_container_width=True)
 
-        with tab2:
-            st.markdown("### Deep Dive : Analyse d'une sortie spécifique")
+            # Layout Bento : Ligne 2
+            col3, col4, col5 = st.columns(3)
             
-            # Sélecteur d'activité avec affichage propre (Date - Nom - Dist)
-            activity_options = df_filtered.sort_values('start_date_local', ascending=False).to_dict('records')
+            with col3:
+                with st.container(border=True):
+                    st.markdown("#### ⚖️ Monotonie")
+                    monotony = last_metrics['Monotony']
+                    # Monotonie > 2.0 est risqué
+                    mono_color = "red" if monotony > 2.0 else "green"
+                    st.markdown(f"<h2 style='color:{mono_color}'>{monotony:.2f}</h2>", unsafe_allow_html=True)
+                    st.caption("Plus c'est bas, plus ton entraînement est varié. Si > 2.0 : Risque (Toujours la même chose).")
             
-            # On crée une liste de labels pour le selectbox
-            options_labels = [f"{act['start_date_local'].strftime('%d/%m')} - {act['name']} ({act['distance_km']:.1f}km)" for act in activity_options]
-            
-            selected_label = st.selectbox("Choisis une séance :", options_labels)
-            
-            # Retrouver l'activité sélectionnée
-            selected_index = options_labels.index(selected_label)
-            act_data = activity_options[selected_index]
-            
-            # Affichage Détails
-            col_a, col_b, col_c = st.columns(3)
-            
-            # Calculs spécifiques
-            pace = calculate_pace(act_data.get('average_speed'))
-            hr = int(act_data.get('average_heartrate', 0)) if not pd.isna(act_data.get('average_heartrate')) else 0
-            elev = int(act_data.get('total_elevation_gain', 0))
-            
-            # Calcul Efficiency Factor (Vitesse / FC)
-            # Plus c'est haut, plus on est efficace (Vitesse élevée pour FC basse)
-            efficiency = 0
-            if hr > 0:
-                speed_kmh = act_data.get('average_speed', 0) * 3.6
-                efficiency = round(speed_kmh / hr, 2)
-            
-            # Calcul GAP approximatif (Grade Adjusted Pace)
-            # Règle pouce : +100m D+ = +1km plat (très grossier mais utile pour MVP)
-            gap_dist = act_data['distance_km'] + (elev / 1000)
-            gap_speed = (gap_dist * 1000) / act_data['moving_time']
-            gap_pace = calculate_pace(gap_speed)
+            with col4:
+                with st.container(border=True):
+                    st.markdown("#### 🗓️ Série en cours")
+                    # Calcul naïf de la série
+                    streak = 0
+                    # On remonte les jours
+                    for i in range(len(df_daily)):
+                        if df_daily.iloc[-(i+1)]['trimp'] > 0:
+                            streak += 1
+                        else:
+                            break # On arrête au premier jour sans sport
+                    st.markdown(f"<h2>🔥 {streak} Jours</h2>", unsafe_allow_html=True)
+                    st.caption("Consistance d'entraînement.")
 
-            with col_a:
-                st.metric("Distance & D+", f"{act_data['distance_km']:.2f} km", f"{elev}m d+")
-                st.metric("Allure Moyenne", pace)
-            
-            with col_b:
-                st.metric("Cardio Moyen", f"{hr} bpm" if hr > 0 else "--")
-                st.metric("Allure Ajustée (GAP)", gap_pace, help="Allure théorique sur le plat compte tenu du dénivelé")
+            with col5:
+                with st.container(border=True):
+                    st.markdown("#### 👟 Kilométrage Hebdo")
+                    # Somme des 7 derniers jours
+                    dist_7d = df_daily['distance_km'].rolling(window=7).sum().iloc[-1]
+                    st.markdown(f"<h2>{int(dist_7d)} km</h2>", unsafe_allow_html=True)
+                    st.caption("Volume glissant sur 7 jours.")
 
-            with col_c:
-                st.metric("Training Load", calculate_trimp(act_data['moving_time']/60, hr), help="Score de charge basé sur la durée et le cardio")
-                st.metric("Efficacité Cardiaque", efficiency, help="Ratio Vitesse (km/h) / FC. À suivre sur les footings.")
-
-            st.caption(f"ID Activité : {act_data.get('id')} | Type : {act_data.get('type')}")
+        # =================================================
+        # PAGE 2 : LE MICROSCOPE (LAST ACTIVITY)
+        # =================================================
+        with tab_micro:
+            st.markdown("### 🔬 Analyse de la dernière séance")
             
-            # Petit commentaire auto sur la séance
-            if hr > 165:
-                st.warning("🥵 **Séance intense :** Grosse sollicitation cardiaque. Pense à bien récupérer (hydratation + sommeil).")
-            elif hr > 0 and hr < 140:
-                st.success("😎 **Endurance :** Excellente séance pour le foncier. Faible coût physiologique.")
+            # Sélection activité (Par défaut la plus récente)
+            last_act = df.iloc[0] # Trié par date descendant normalement
+            
+            # Vérif si on a des données de FC
+            has_hr = 'average_heartrate' in last_act and last_act['average_heartrate'] > 0
+            
+            # Calculs Spécifiques Séance
+            cardiac_cost = 0
+            efficiency_factor = 0
+            
+            if has_hr and last_act['distance_km'] > 0:
+                # Coût Cardiaque : Battements par km
+                # (FC Moy * Durée min) / Dist km
+                beats_total = last_act['average_heartrate'] * (last_act['moving_time'] / 60)
+                cardiac_cost = beats_total / last_act['distance_km']
+                
+                # Efficiency Factor : Vitesse (m/min) / FC Moy OU Vitesse (km/h) / FC
+                # Utilisons Speed (m/min) / HR pour être standard
+                speed_m_min = (last_act['distance_km'] * 1000) / (last_act['moving_time'] / 60)
+                efficiency_factor = speed_m_min / last_act['average_heartrate']
+
+            col_m1, col_m2 = st.columns([1, 2])
+            
+            with col_m1:
+                with st.container(border=True):
+                    st.subheader(f"{last_act['name']}")
+                    st.caption(f"{last_act['start_date_local'].strftime('%d/%m/%Y')} - {last_act['type']}")
+                    st.metric("Distance", f"{last_act['distance_km']:.2f} km")
+                    st.metric("D+", f"{last_act.get('total_elevation_gain', 0)} m")
+                    st.metric("TRIMP", f"{int(last_act['trimp'])}")
+            
+            with col_m2:
+                c1, c2 = st.columns(2)
+                c1.metric("🫀 Coût Cardiaque", f"{int(cardiac_cost)} bpm/km", help="Battements dépensés par km. Plus c'est bas, mieux c'est.")
+                c2.metric("🚀 Efficiency Factor", f"{efficiency_factor:.2f}", help="Vitesse (m/min) par battement. Plus c'est haut, mieux c'est.")
+                
+                # Graphique Simulé de Superposition (Altitude vs Cardio)
+                # Comme on n'a pas les streams réels dans ce MVP, on génère un graph démo pour montrer l'intention
+                st.markdown("#### ⛰️ Superposition Cardio / Altitude (Simulation)")
+                
+                # Mock stream data
+                x_axis = np.linspace(0, last_act['distance_km'], 100)
+                # Simuler une montée puis descente
+                alt_stream = 100 + 50 * np.sin(x_axis) + np.random.normal(0, 5, 100)
+                # Simuler le cardio qui suit l'effort (avec dérive)
+                hr_stream = 140 + 20 * np.sin(x_axis) + np.linspace(0, 10, 100) + np.random.normal(0, 2, 100)
+                
+                fig_stream = go.Figure()
+                fig_stream.add_trace(go.Scatter(x=x_axis, y=alt_stream, fill='tozeroy', name='Altitude', line=dict(color='gray', width=0), opacity=0.3))
+                fig_stream.add_trace(go.Scatter(x=x_axis, y=hr_stream, name='Cardio', line=dict(color='red', width=2), yaxis='y2'))
+                
+                fig_stream.update_layout(
+                    yaxis=dict(title="Altitude (m)", showgrid=False),
+                    yaxis2=dict(title="BPM", overlaying='y', side='right', showgrid=False),
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    height=250,
+                    showlegend=True
+                )
+                st.plotly_chart(fig_stream, use_container_width=True)
+                st.caption("*Graphique simulé (nécessite les flux de données détaillés Strava)*")
+
+        # =================================================
+        # PAGE 3 : LE LABORATOIRE (LONG TERM)
+        # =================================================
+        with tab_labo:
+            st.markdown("### 🧪 Tendances Long Terme")
+            
+            # Filtre Run uniquement pour la pertinence
+            df_run = df[df['type'] == 'Run'].copy()
+            
+            if not df_run.empty:
+                col_l1, col_l2 = st.columns(2)
+                
+                with col_l1:
+                    st.markdown("#### 📉 Nuage de Corrélation (Le Graal)")
+                    st.caption("Objectif : Déplacement des points vers le bas à droite (Plus vite, Cardio plus bas)")
+                    
+                    if 'average_heartrate' in df_run.columns:
+                        # Vitesse km/h
+                        df_run['speed_kmh'] = df_run['average_speed'] * 3.6
+                        
+                        fig_corr = px.scatter(df_run, x="speed_kmh", y="average_heartrate", 
+                                              color="start_date_local",
+                                              title="Vitesse vs Cardio (Couleur = Date)",
+                                              labels={"speed_kmh": "Vitesse (km/h)", "average_heartrate": "FC Moyenne"})
+                        st.plotly_chart(fig_corr, use_container_width=True)
+                    else:
+                        st.info("Pas de données cardio.")
+
+                with col_l2:
+                    st.markdown("#### 🍩 Répartition du Volume (Zones simulées)")
+                    # Simulation des zones basées sur la FC Max théorique (220-age ou 190 défaut)
+                    # Zone 1-2 (<150), Zone 3 (150-165), Zone 4+ (>165)
+                    def categorize_zone(hr):
+                        if hr < 145: return "Z1/Z2 (Endurance)"
+                        elif hr < 160: return "Z3 (Tempo)"
+                        else: return "Z4/Z5 (Intensité)"
+                    
+                    if 'average_heartrate' in df_run.columns:
+                        df_run['zone'] = df_run['average_heartrate'].apply(categorize_zone)
+                        fig_pie = px.pie(df_run, names='zone', values='distance_km', title="Volume par Zone d'Intensité",
+                                         color_discrete_map={"Z1/Z2 (Endurance)": "green", "Z3 (Tempo)": "orange", "Z4/Z5 (Intensité)": "red"})
+                        st.plotly_chart(fig_pie, use_container_width=True)
+
+        # =================================================
+        # PAGE 4 : LE CABINET DU DOC (SANTÉ)
+        # =================================================
+        with tab_doc:
+            st.markdown("### 🩺 Prévention & Santé")
+            
+            col_d1, col_d2 = st.columns(2)
+            
+            with col_d1:
+                with st.container(border=True):
+                    st.markdown("#### 🚑 Ratio ACWR (Acute:Chronic Workload)")
+                    acwr_val = last_metrics['ACWR']
+                    
+                    fig_acwr = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = acwr_val,
+                        title = {'text': "ACWR"},
+                        gauge = {
+                            'axis': {'range': [0, 2.5]},
+                            'bar': {'color': "black"},
+                            'steps': [
+                                {'range': [0, 0.8], 'color': "lightgray"}, # Sous-entrainement
+                                {'range': [0.8, 1.3], 'color': "green"}, # Sweet Spot
+                                {'range': [1.3, 1.5], 'color': "orange"}, # Risque
+                                {'range': [1.5, 2.5], 'color': "red"}], # Danger
+                            'threshold': {
+                                'line': {'color': "red", 'width': 4},
+                                'thickness': 0.75,
+                                'value': acwr_val}
+                        }
+                    ))
+                    fig_acwr.update_layout(height=200)
+                    st.plotly_chart(fig_acwr, use_container_width=True)
+                    st.caption("Si > 1.5 : DANGER. Tu augmentes la charge trop vite par rapport à ton habitude des 4 dernières semaines.")
+
+            with col_d2:
+                with st.container(border=True):
+                    st.markdown("#### 👟 Suivi Usure Chaussures")
+                    # Simulation : On imagine que l'utilisateur a couru tout ça avec une paire
+                    total_km_run = df[df['type']=='Run']['distance_km'].sum()
+                    max_km_shoe = 800
+                    
+                    percent_wear = min(total_km_run / max_km_shoe, 1.0)
+                    st.progress(percent_wear)
+                    st.write(f"**Kilométrage total calculé :** {int(total_km_run)} km")
+                    
+                    if total_km_run > 800:
+                        st.error("👟 Tes chaussures sont mortes (>800km). Risque de blessure élevé. Change-les !")
+                    elif total_km_run > 500:
+                        st.warning("👟 L'amorti commence à fatiguer.")
+                    else:
+                        st.success("👟 Chaussures OK.")
 
     else:
         st.info("Aucune activité trouvée pour ce filtre.")
