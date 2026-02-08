@@ -50,6 +50,22 @@ st.markdown("""
         margin-top: 10px;
         border-radius: 0 5px 5px 0;
     }
+    .coach-warning {
+        background-color: #fff5f5;
+        border-left: 4px solid #e74c3c;
+        padding: 10px;
+        font-size: 0.9rem;
+        margin-top: 10px;
+        border-radius: 0 5px 5px 0;
+    }
+    .coach-success {
+        background-color: #f0fdf4;
+        border-left: 4px solid #2ecc71;
+        padding: 10px;
+        font-size: 0.9rem;
+        margin-top: 10px;
+        border-radius: 0 5px 5px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -451,18 +467,7 @@ else:
                 with st.container(border=True):
                     st.markdown(f"#### 🤖 Verdict du Coach")
                     st.info(f"**{verdict}**")
-                    
-                    with st.expander("ℹ️ Comprendre mon état de forme"):
-                        st.markdown(f"""
-                        **Comment le coach calcule ça ?**
-                        
-                        1. **Ta Forme (CTL - {int(last_metrics['CTL'])})** : C'est ta "caisse", ton endurance accumulée sur les 42 derniers jours. Plus c'est haut, plus tu es solide.
-                        2. **Ta Fatigue (ATL - {int(last_metrics['ATL'])})** : C'est la charge encaissée sur les 7 derniers jours. Si elle est trop haute, tu es fatigué.
-                        3. **Ton Équilibre (TSB)** : C'est la différence (Forme - Fatigue).
-                        
-                        *Si TSB est positif (>0)* : Tu es frais et performant.
-                        *Si TSB est très négatif (<-20)* : Tu es en surcharge. Repos nécessaire pour assimiler.
-                        """)
+                    st.caption("Le verdict croise ta fatigue court terme et ta forme long terme.")
 
             with col2:
                 with st.container(border=True):
@@ -479,13 +484,88 @@ else:
                     ))
                     fig_gauge.update_layout(height=120, margin=dict(l=20, r=20, t=20, b=20))
                     st.plotly_chart(fig_gauge, use_container_width=True)
-                    
-                    if score_tsb > 0:
-                        st.caption("🟢 **Batterie chargée.** Tu es frais, c'est le moment de faire de l'intensité ou une course.")
-                    elif score_tsb > -20:
-                        st.caption("🟠 **En charge.** Tu es en phase d'entraînement productif. Continue.")
-                    else:
-                        st.caption("🔴 **Batterie faible.** Risque de surchauffe. Lève le pied pour recharger.")
+
+            # --- NOUVELLE SECTION : FORME vs FATIGUE ---
+            st.markdown("### 🏗️ Construction de la Performance")
+            col_f1, col_f2 = st.columns(2)
+            
+            # CALCULS & LOGIQUE CONSEILS
+            ctl_val = int(last_metrics['CTL'])
+            atl_val = int(last_metrics['ATL'])
+            
+            # Conseil Forme
+            msg_forme = ""
+            if ctl_val < 30: msg_forme = "Niveau débutant/reprise. La régularité est ta priorité n°1."
+            elif ctl_val < 60: msg_forme = "Bonne base foncière. Tu peux commencer à intégrer de l'intensité."
+            else: msg_forme = "Machine de guerre ! Tu as une grosse caisse pour encaisser les charges lourdes."
+
+            # Conseil Fatigue
+            msg_fatigue = ""
+            style_fatigue = "coach-tip" # Bleu par défaut
+            if atl_val > ctl_val + 20: 
+                msg_fatigue = "⚠️ **Alerte Rouge :** Ta charge récente explose ta moyenne. Risque de blessure imminent. Ralentis !"
+                style_fatigue = "coach-warning"
+            elif atl_val < ctl_val - 20: 
+                msg_fatigue = "💤 **Sous-régime :** Tu te reposes trop. Ton niveau de forme va commencer à chuter."
+            else:
+                msg_fatigue = "✅ **Zone Verte :** Ta fatigue est contrôlée par rapport à ta forme. Tu peux pousser."
+                style_fatigue = "coach-success"
+
+            with col_f1:
+                st.markdown(f"""
+                <div class="bento-box" style="border-left: 5px solid #2ecc71;">
+                    <div class="metric-label">🏃 Forme (CTL)</div>
+                    <div class="metric-value">{ctl_val}</div>
+                    <div class="metric-insight">Moyenne charge 42 jours</div>
+                    <div class="coach-tip">
+                        <strong>C'est quoi ?</strong> Ta "caisse". Plus ce chiffre est haut, plus tu es endurant et solide.<br>
+                        <strong>Conseil :</strong> {msg_forme}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_f2:
+                # Couleur dynamique bordure
+                border_col = "#e74c3c" if atl_val > ctl_val + 20 else "#f1c40f"
+                st.markdown(f"""
+                <div class="bento-box" style="border-left: 5px solid {border_col};">
+                    <div class="metric-label">💤 Fatigue (ATL)</div>
+                    <div class="metric-value">{atl_val}</div>
+                    <div class="metric-insight">Moyenne charge 7 jours</div>
+                    <div class="{style_fatigue}">
+                        <strong>C'est quoi ?</strong> La fatigue accumulée cette semaine.<br>
+                        <strong>Conseil :</strong> {msg_fatigue}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # GRAPHIQUE ÉVOLUTION (60 JOURS)
+            st.markdown("#### 📉 Le Match : Forme vs Fatigue (60 derniers jours)")
+            
+            # Préparation données graph
+            now = datetime.now()
+            date_60d_ago = now - timedelta(days=60)
+            df_chart = df_daily_metrics[df_daily_metrics.index > date_60d_ago].copy()
+            
+            if not df_chart.empty:
+                fig_ff = go.Figure()
+                # Zone Forme (Verte pleine)
+                fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['CTL'], fill='tozeroy', 
+                                            name='Forme (CTL)', line=dict(color='#2ecc71')))
+                # Ligne Fatigue (Rouge/Orange)
+                fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['ATL'], 
+                                            name='Fatigue (ATL)', line=dict(color='#e67e22', width=2, dash='dot')))
+                
+                fig_ff.update_layout(
+                    height=300, 
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_ff, use_container_width=True)
+            else:
+                st.caption("Pas assez d'historique pour afficher la courbe.")
+
+            st.divider()
 
             # LIGNE 2 : KPI MÉTIER (Consistance, Volume, Monotonie)
             col3, col4, col5 = st.columns(3)
