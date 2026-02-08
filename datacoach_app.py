@@ -24,10 +24,10 @@ st.markdown("""
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 20px;
-        /* Pas d'ombre pour un look 'flat' intégré */
+        height: 100%; /* Force la hauteur */
     }
     
-    /* Titres et chiffres - Couleur dynamique selon le thème */
+    /* Titres et chiffres */
     .metric-value {
         font-size: 2rem;
         font-weight: 800;
@@ -43,10 +43,10 @@ st.markdown("""
     
     /* Textes explicatifs */
     .metric-insight {
-        font-size: 0.9rem;
-        opacity: 0.8;
-        margin-top: 5px;
-        line-height: 1.5;
+        font-size: 0.95rem; /* Un peu plus gros pour la lisibilité */
+        opacity: 0.9;
+        margin-top: 8px;
+        line-height: 1.6;
     }
     
     /* Bulles de conseil */
@@ -168,28 +168,56 @@ def calculate_training_metrics(df):
     return df_daily
 
 def get_coach_verdict(tsb, acwr):
-    """Génère le verdict du coach basé sur le TSB et l'ACWR"""
+    """Génère le verdict du coach détaillé basé sur le TSB et l'ACWR"""
     verdict = ""
     color = "green"
-    
+    detail = ""
+    subtext = ""
+
     if acwr > 1.5:
         verdict = "🛑 STOP DANGER"
-        subtext = "Risque de blessure maximal. Surcharge brutale."
+        subtext = "Risque de blessure maximal."
         color = "#ef4444" # Rouge
+        detail = (
+            "⚠️ **Alerte Rouge :** Ton ratio de charge aiguë (ACWR) dépasse 1.5. "
+            "Cela signifie que tu as augmenté ta charge d'entraînement beaucoup trop brutalement "
+            "par rapport à ce que ton corps a l'habitude d'encaisser ces 4 dernières semaines. "
+            "Tes tendons et muscles sont en zone rouge. **Conseil :** Coupe tout pendant 3 jours, "
+            "puis reprends uniquement par du footing très léger. Pas d'intensité cette semaine."
+        )
     elif tsb < -20:
         verdict = "⚠️ SURCHARGE"
-        subtext = "Tu es fatigué. Programme une récupération."
+        subtext = "Fatigue excessive détectée."
         color = "#f59e0b" # Orange
+        detail = (
+            "🟠 **Attention :** Ta balance de stress (TSB) est descendue très bas (< -20). "
+            "Tu accumules de la fatigue plus vite que tu ne récupères. C'est productif à court terme "
+            "pour créer un pic de forme plus tard, mais dangereux si ça dure. "
+            "**Conseil :** Allège le programme. Fais sauter la prochaine séance difficile ou remplace-la "
+            "par du vélo souple / repos complet."
+        )
     elif tsb > 10:
         verdict = "🚀 EN FORME"
-        subtext = "Fraîcheur au top. Place une séance clé."
+        subtext = "Tous les voyants sont au vert."
         color = "#22c55e" # Vert
-    else:
+        detail = (
+            "🟢 **Feu Vert :** Tu as une excellente fraîcheur physique tout en ayant maintenu un entraînement régulier. "
+            "C'est l'état idéal pour perfer ! Si tu as une course ou un test VMA, c'est le moment. "
+            "**Conseil :** Profite de cet état de grâce pour faire une séance de qualité (Seuil ou VMA) "
+            "car tes jambes vont répondre."
+        )
+    else: # TSB entre -20 et 10
         verdict = "✅ OPTIMAL"
-        subtext = "Équilibre parfait. Continue le plan."
+        subtext = "Équilibre Charge/Récup parfait."
         color = "#3b82f6" # Bleu
+        detail = (
+            "🔵 **Vitesse de croisière :** Tu es dans la zone de travail idéale ('Sweet Spot'). "
+            "Tu t'entraînes suffisamment pour progresser (créer de la fatigue) mais tu récupères assez "
+            "pour assimiler le travail. C'est la clé de la régularité. "
+            "**Conseil :** Ne change rien. Continue d'alterner efforts et repos comme tu le fais."
+        )
         
-    return verdict, subtext, color
+    return verdict, subtext, color, detail
 
 def get_activity_streams(activity_id, access_token):
     """Récupère les données détaillées (seconde par seconde) d'une activité."""
@@ -489,43 +517,71 @@ else:
             
             # --- 2. VERDICT & BATTERIE ---
             st.subheader("🤖 Verdict & Énergie")
-            verdict_title, verdict_sub, verdict_col_hex = get_coach_verdict(last_metrics['TSB'], last_metrics['ACWR'])
+            verdict_title, verdict_sub, verdict_col_hex, verdict_detail = get_coach_verdict(last_metrics['TSB'], last_metrics['ACWR'])
             
             col1, col2 = st.columns(2)
             
             with col1:
+                # Bloc Verdict avec Bordure Colorée (Style identique à la batterie)
                 st.markdown(f"""
                 <div class="bento-box" style="border-left: 8px solid {verdict_col_hex};">
                     <div class="metric-label">Verdict du Coach</div>
                     <div class="metric-value" style="color: {verdict_col_hex}">{verdict_title}</div>
                     <div class="metric-insight">{verdict_sub}</div>
+                    <div class="metric-insight" style="margin-top: 15px; font-style: italic; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px;">
+                        {verdict_detail}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             with col2:
-                # Bento Batterie
+                # Calcul de la batterie en % (TSB -30 = 0%, TSB +20 = 100%)
                 tsb_val = int(last_metrics['TSB'])
-                batt_color = "#22c55e" if tsb_val > 0 else "#f59e0b"
-                if tsb_val < -20: batt_color = "#ef4444"
+                # Normalisation entre 0 et 100
+                # Si TSB = -30, pct = 0. Si TSB = +20, pct = 100.
+                battery_pct = max(0, min(100, int((tsb_val + 30) / 50 * 100)))
+                
+                batt_color = "#22c55e" # Vert par défaut
+                if battery_pct < 20: batt_color = "#ef4444" # Rouge
+                elif battery_pct < 50: batt_color = "#f59e0b" # Orange
 
-                with st.container(border=True):
-                    c_b1, c_b2 = st.columns([1, 1])
-                    with c_b1:
-                        st.markdown(f'<div class="metric-label">Niveau de Batterie (TSB)</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="metric-value" style="color:{batt_color}">{tsb_val}</div>', unsafe_allow_html=True)
-                        if tsb_val > 0: st.caption("Batterie chargée 🟢")
-                        elif tsb_val > -20: st.caption("En usage 🟠")
-                        else: st.caption("Batterie critique 🔴")
-                    with c_b2:
-                         fig_gauge = go.Figure(go.Indicator(
-                            mode = "gauge", value = tsb_val,
-                            gauge = {'axis': {'range': [-50, 50], 'visible': False}, 
-                                     'bar': {'color': batt_color},
-                                     'bgcolor': "rgba(0,0,0,0)",
-                                     'steps': [{'range': [-50, 50], 'color': "rgba(200,200,200,0.2)"}]} 
-                        ))
-                         fig_gauge.update_layout(height=100, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
-                         st.plotly_chart(fig_gauge, use_container_width=True)
+                # Bloc Batterie avec Bordure Colorée (Style identique au verdict)
+                st.markdown(f"""
+                <div class="bento-box" style="border-left: 8px solid {batt_color};">
+                    <div class="metric-label">Niveau de Batterie</div>
+                    <div class="metric-value" style="color: {batt_color}">{battery_pct}%</div>
+                    <div class="metric-insight">Basé sur ton indice de fraîcheur (TSB: {tsb_val})</div>
+                    <div class="metric-insight" style="margin-top: 15px; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px;">
+                        C'est ton "carburant" disponible aujourd'hui.
+                        <ul>
+                            <li><strong>100% :</strong> Pleine bourre, prêt à battre des records.</li>
+                            <li><strong>50% :</strong> État normal d'entraînement.</li>
+                            <li><strong>0% :</strong> Épuisement total, risque de blessure.</li>
+                        </ul>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Bar Chart Horizontal pour la batterie (Intégré sous le texte via Plotly)
+                # On utilise une colonne st.plotly_chart en dehors du HTML pour la propreté ou intégré via container
+                fig_batt = go.Figure(go.Bar(
+                    x=[battery_pct],
+                    y=['Batterie'],
+                    orientation='h',
+                    marker=dict(color=batt_color),
+                    text=[f"{battery_pct}%"],
+                    textposition='auto',
+                    hoverinfo='none'
+                ))
+                fig_batt.update_layout(
+                    xaxis=dict(range=[0, 100], visible=True, title="Niveau de Charge (%)"),
+                    yaxis=dict(visible=False),
+                    height=80,
+                    margin=dict(l=0, r=0, t=0, b=20),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0.05)'
+                )
+                st.plotly_chart(fig_batt, use_container_width=True)
 
             # --- 3. FORME & FATIGUE (DÉTAIL) ---
             st.subheader("🏗️ Analyse Structurelle : Forme vs Fatigue")
@@ -534,61 +590,37 @@ else:
             ctl_val = int(last_metrics['CTL'])
             atl_val = int(last_metrics['ATL'])
             
-            # Conseils dynamiques
-            if ctl_val < 30: tip_forme = "Niveau Débutant/Reprise. La régularité est ta priorité."
-            elif ctl_val < 60: tip_forme = "Bonne base. Tu peux commencer à charger."
-            else: tip_forme = "Machine ! Grosse caisse aérobie."
-
-            if atl_val > ctl_val + 20: 
-                tip_fatigue = "⚠️ **Danger :** Tu en fais trop d'un coup. Ralentis immédiatement."
-                css_fatigue = "coach-warning"
-                border_fatigue = "#ef4444"
-            elif atl_val < ctl_val - 15:
-                tip_fatigue = "💤 **Repos :** Tu es en sous-régime. Repos ou manque d'entraînement ?"
-                css_fatigue = "coach-tip"
-                border_fatigue = "#3b82f6"
-            else:
-                tip_fatigue = "✅ **Productif :** Charge cohérente avec ta forme."
-                css_fatigue = "coach-success"
-                border_fatigue = "#22c55e"
-
             with col_f1:
-                with st.container(border=True):
-                    c_f1_a, c_f1_b = st.columns([2, 1])
-                    with c_f1_a:
-                        st.markdown('<div class="metric-label">🏃 Forme (CTL)</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="metric-value">{ctl_val}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="metric-insight">Moyenne Charge 42 jours<br><i>Ta "caisse" ou endurance de fond.</i></div>', unsafe_allow_html=True)
-                    with c_f1_b:
-                        # Jauge Forme (0-100 arbitraire pour amateur)
-                        fig_ctl = go.Figure(go.Indicator(
-                            mode = "gauge+number", value = ctl_val,
-                            number = {'font': {'size': 1}}, # Hack pour cacher le chiffre duplicata
-                            gauge = {'axis': {'range': [0, 100], 'visible': False}, 'bar': {'color': "#3b82f6"}}
-                        ))
-                        fig_ctl.update_layout(height=80, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
-                        st.plotly_chart(fig_ctl, use_container_width=True)
-                    
-                    st.markdown(f'<div class="coach-tip"><strong>Conseil :</strong> {tip_forme}</div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="bento-box" style="border-left: 5px solid #3b82f6;">
+                    <div class="metric-label">🏃 Niveau de Forme (CTL)</div>
+                    <div class="metric-value">{ctl_val}</div>
+                    <div class="metric-insight">
+                        <strong>C'est quoi ?</strong> Imagine que c'est la taille de ton moteur (V8, V12...). 
+                        C'est la moyenne de ta charge d'entraînement sur les <strong>42 derniers jours</strong>.
+                        Plus ce chiffre est élevé, plus tu es capable d'encaisser des efforts longs et durs sans broncher.
+                        C'est ton capital "Endurance" qui se construit lentement.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             with col_f2:
-                with st.container(border=True):
-                    c_f2_a, c_f2_b = st.columns([2, 1])
-                    with c_f2_a:
-                        st.markdown('<div class="metric-label">💤 Fatigue (ATL)</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="metric-value">{atl_val}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="metric-insight">Moyenne Charge 7 jours<br><i>La fatigue accumulée récemment.</i></div>', unsafe_allow_html=True)
-                    with c_f2_b:
-                        # Jauge Fatigue (0-150 car ça peut monter vite)
-                        fig_atl = go.Figure(go.Indicator(
-                            mode = "gauge+number", value = atl_val,
-                            number = {'font': {'size': 1}},
-                            gauge = {'axis': {'range': [0, 150], 'visible': False}, 'bar': {'color': border_fatigue}}
-                        ))
-                        fig_atl.update_layout(height=80, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
-                        st.plotly_chart(fig_atl, use_container_width=True)
-                    
-                    st.markdown(f'<div class="{css_fatigue}"><strong>Conseil :</strong> {tip_fatigue}</div>', unsafe_allow_html=True)
+                # Couleur de fatigue dynamique
+                color_fatigue = "#22c55e"
+                if atl_val > ctl_val + 20: color_fatigue = "#ef4444"
+                
+                st.markdown(f"""
+                <div class="bento-box" style="border-left: 5px solid {color_fatigue};">
+                    <div class="metric-label">💤 Niveau de Fatigue (ATL)</div>
+                    <div class="metric-value" style="color:{color_fatigue}">{atl_val}</div>
+                    <div class="metric-insight">
+                        <strong>C'est quoi ?</strong> C'est la facture que tu paies pour tes efforts récents.
+                        C'est la moyenne de ta charge sur les <strong>7 derniers jours</strong>.
+                        Si la Fatigue (ATL) est beaucoup plus haute que ta Forme (CTL), tu es en "Dette".
+                        Si elle est plus basse, tu es en "Récupération".
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             # --- 4. GRAPHIQUE ÉVOLUTION ---
             st.subheader("📉 Évolution (60 jours)")
@@ -598,10 +630,10 @@ else:
             if not df_chart.empty:
                 fig_ff = go.Figure()
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['CTL'], fill='tozeroy', 
-                                            name='Forme (CTL)', line=dict(color='#22c55e')))
+                                            name='Forme (CTL - Capital)', line=dict(color='#3b82f6')))
                 fig_ff.add_trace(go.Scatter(x=df_chart.index, y=df_chart['ATL'], 
-                                            name='Fatigue (ATL)', line=dict(color='#f97316', width=2)))
-                fig_ff.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0), 
+                                            name='Fatigue (ATL - Dette)', line=dict(color='#f97316', width=2)))
+                fig_ff.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0), 
                                      legend=dict(orientation="h", y=1.1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_ff, use_container_width=True)
             else:
