@@ -14,7 +14,7 @@ import numpy as np
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
 
-# --- STYLES CSS PERSONNALISÉS (BENTO PRO) ---
+# --- STYLES CSS PERSONNALISÉS (BENTO PRO + DUAL) ---
 st.markdown("""
 <style>
     /* Style global des boîtes Bento */
@@ -31,13 +31,34 @@ st.markdown("""
         justify-content: flex-start;
     }
     
-    .bento-small {
+    /* Bento Dual (7j vs 30j) */
+    .bento-dual {
         background-color: transparent; 
         border: 1px solid rgba(128, 128, 128, 0.3);
         border-radius: 12px;
-        padding: 15px;
+        padding: 15px 20px;
         margin-bottom: 15px;
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .dual-left {
+        text-align: left;
+        flex: 1;
+    }
+    
+    .dual-sep {
+        width: 1px;
+        height: 50px;
+        background-color: rgba(128,128,128,0.2);
+        margin: 0 20px;
+    }
+    
+    .dual-right {
+        text-align: right;
+        flex: 1;
+        opacity: 0.9;
     }
 
     /* Layout Interne */
@@ -55,6 +76,12 @@ st.markdown("""
         margin: 0;
         line-height: 1.1;
     }
+    .metric-value-small {
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1.1;
+    }
     .metric-label {
         font-size: 0.9rem;
         font-weight: 700;
@@ -63,10 +90,18 @@ st.markdown("""
         letter-spacing: 1px;
         margin-bottom: 5px;
     }
+    .metric-label-small {
+        font-size: 0.75rem;
+        font-weight: 600;
+        opacity: 0.6;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+    }
     .metric-sub {
         font-size: 0.85rem;
-        opacity: 0.5;
+        opacity: 0.8;
         font-weight: 500;
+        margin-top: 2px;
     }
     
     /* Textes explicatifs */
@@ -110,7 +145,7 @@ st.markdown("""
     }
     .goal-phase {
         display: inline-block;
-        background-color: #3b82f6;
+        background-color: #ffffff;
         color: white;
         padding: 4px 12px;
         border-radius: 20px;
@@ -130,13 +165,13 @@ ACTIVITY_TRANSLATIONS = {
     "Run": "Course à pied",
     "Ride": "Vélo",
     "VirtualRide": "Vélo Intérieur",
-    "WeightTraining": "Musculation",
+    "WeightTraining": "PPG",
     "Hike": "Randonnée",
     "Walk": "Marche",
     "Swim": "Natation",
     "AlpineSki": "Ski Alpin",
     "BackcountrySki": "Ski de Rando",
-    "Workout": "Entraînement",
+    "Workout": "PPG",
     "Yoga": "Yoga"
 }
 
@@ -219,25 +254,18 @@ def get_coach_verdict(tsb, acwr):
     return verdict, subtext, color, detail
 
 def analyze_goal_context(goal_type, goal_date_str, current_vol_7d, ctl_val):
-    """
-    Analyse complexe de la situation par rapport à l'objectif
-    """
     if not goal_date_str or not goal_type:
         return None, None
-
     try:
         target_date = datetime.strptime(goal_date_str, "%Y-%m-%d")
     except:
         return None, None
-        
     days_remaining = (target_date - datetime.now()).days
     weeks_remaining = days_remaining // 7
-    
     phase = ""
     advice = ""
     status_icon = "🟢"
 
-    # --- LOGIQUE MARATHON ---
     if goal_type == "Prépa Marathon":
         if days_remaining > 120:
             phase = "Développement Général"
@@ -260,8 +288,6 @@ def analyze_goal_context(goal_type, goal_date_str, current_vol_7d, ctl_val):
         else:
             phase = "Récupération / Objectif Passé"
             advice = "Bravo pour l'effort. Prends le temps de régénérer."
-
-    # --- LOGIQUE 10KM / SEMI ---
     elif goal_type in ["Prépa 10km", "Prépa Semi"]:
         if days_remaining > 60:
             phase = "Foncier & Vitesse"
@@ -275,17 +301,26 @@ def analyze_goal_context(goal_type, goal_date_str, current_vol_7d, ctl_val):
         else:
             phase = "Terminé"
             advice = "Objectif passé."
-
-    # --- LOGIQUE PERTE DE POIDS / SANTÉ ---
     else:
         phase = "Régularité & Plaisir"
         if current_vol_7d > 20:
             advice = "Excellent volume pour la santé. Continue comme ça !"
         else:
             advice = "Essaie de maintenir 3 créneaux de 30min par semaine, c'est la clé du métabolisme."
-
     full_text = f"**J-{days_remaining}** ({weeks_remaining} semaines) • **{phase}**\n\n{status_icon} {advice}"
     return full_text, phase
+
+# Helper variation
+def calc_delta(curr, prev):
+    if prev == 0: return 0 if curr == 0 else 100
+    return int(((curr - prev) / prev) * 100)
+
+def format_delta(val):
+    sign = "+" if val > 0 else ""
+    # Vert si positif (Volume augmenté), mais pour le contexte général c'est souvent positif
+    # On peut affiner : si augmentation > 50% c'est rouge ? Pour l'instant restons simple.
+    color = "#22c55e" if val >= 0 else "#f97316" 
+    return f'<span style="color:{color}; font-weight:bold; font-size:0.85rem;">{sign}{val}%</span>'
 
 def get_activity_streams(activity_id, access_token):
     if access_token == "demo_fake_token":
@@ -386,8 +421,7 @@ else:
         activities = generate_mock_data()
     else:
         # On charge 200 activités pour avoir de l'historique
-        activities = strava_auth.get_activities(st.session_state.access_token, per_page=200) # Fonction hypothétique ou request direct
-        # Pour simplifier ici (MVP), je garde le request direct si la fct n'existe pas dans l'import
+        # activities = strava_auth.get_activities(st.session_state.access_token, per_page=200) # Fonction hypothétique
         r = requests.get("https://www.strava.com/api/v3/athlete/activities", headers={"Authorization": f"Bearer {st.session_state.access_token}"}, params={"per_page": 200})
         activities = r.json() if r.status_code == 200 else []
 
@@ -411,13 +445,9 @@ else:
             st.subheader("📅 Période d'Analyse")
             min_date = df['start_date_local'].min().date()
             max_date = df['start_date_local'].max().date()
-            
-            # Par défaut : les 30 derniers jours par rapport à la dernière activité
             default_start = max_date - timedelta(days=30)
-            
             date_range = st.date_input("Sélectionner la période", [default_start, max_date], min_value=min_date, max_value=max_date)
             
-            # Gestion si une seule date sélectionnée
             if len(date_range) == 2:
                 start_filter, end_filter = date_range
             else:
@@ -435,14 +465,11 @@ else:
                     g_types = ["Prépa Marathon", "Prépa Semi", "Prépa 10km", "Perte de poids", "Ultra / Trail", "Entretien"]
                     idx = g_types.index(user_goal.get("type")) if user_goal.get("type") in g_types else 0
                     sType = st.selectbox("Type", g_types, index=idx)
-                    
-                    # Date objectif
                     d_obj = None
                     if user_goal.get("date"):
                         try: d_obj = datetime.strptime(user_goal.get("date"), "%Y-%m-%d")
                         except: pass
                     tDate = st.date_input("Date de l'échéance", value=d_obj)
-                    
                     note = st.text_input("Note (ex: Sub 3h30)", value=user_goal.get("note", ""))
                     if st.form_submit_button("Sauvegarder"):
                         save_goal(athlete_id, {"type": sType, "date": tDate.strftime("%Y-%m-%d") if tDate else None, "note": note})
@@ -450,38 +477,68 @@ else:
                         st.rerun()
 
         # --- APPLICATION DES FILTRES ---
-        # 1. Filtrage GLOBAL du DataFrame par date (Time Machine)
-        # On garde un df_full pour les calculs de long terme (CTL), mais l'affichage principal se fait sur la période
         df_display = df[(df['start_date_local'].dt.date >= start_filter) & (df['start_date_local'].dt.date <= end_filter)].copy()
         
-        # 2. Filtrage par Type
         if selected_type_fr != "Tous":
             df_display = df_display[df_display['type_fr'] == selected_type_fr]
-            df_metrics_source = df[df['type_fr'] == selected_type_fr].copy() # Pour CTL/ATL pertinent
+            df_metrics_source = df[df['type_fr'] == selected_type_fr].copy() 
         else:
             df_metrics_source = df.copy()
 
-        # Calcul Métriques Journalières sur TOUT l'historique (pour avoir un CTL correct même si on filtre l'affichage)
         df_daily_metrics = calculate_training_metrics(df_metrics_source)
         
-        # On récupère les métriques À LA DATE DE FIN du filtre (Time Machine)
-        # Si end_filter est aujourd'hui, c'est l'état actuel. Si c'est le mois dernier, c'est l'état passé.
+        # Time Machine Metrics for Verdict/Gauges
         current_metrics_date = pd.Timestamp(end_filter)
-        # On cherche l'index le plus proche dans le passé ou égal
         try:
-            # On prend la ligne correspondant à end_filter ou la précédente dispo
             idx_loc = df_daily_metrics.index.get_indexer([current_metrics_date], method='pad')[0]
-            if idx_loc != -1:
-                last_metrics = df_daily_metrics.iloc[idx_loc]
-            else:
-                last_metrics = df_daily_metrics.iloc[-1] # Fallback
-        except:
-             last_metrics = df_daily_metrics.iloc[-1]
+            if idx_loc != -1: last_metrics = df_daily_metrics.iloc[idx_loc]
+            else: last_metrics = df_daily_metrics.iloc[-1]
+        except: last_metrics = df_daily_metrics.iloc[-1]
 
-        # Calculs spécifiques pour l'analyse (7 jours AVANT la date de fin du filtre)
-        date_7d_before_end = pd.Timestamp(end_filter) - timedelta(days=7)
-        dist_7d = df_metrics_source[(df_metrics_source['start_date_local'] > date_7d_before_end) & 
-                                    (df_metrics_source['start_date_local'] <= pd.Timestamp(end_filter))]['distance_km'].sum()
+        # --- CALCUL DES PÉRIODES (7j / 30j / Comparatifs) ---
+        # Dates clés
+        date_end = pd.Timestamp(end_filter)
+        date_7d = date_end - timedelta(days=7)
+        date_14d = date_end - timedelta(days=14)
+        date_30d = date_end - timedelta(days=30)
+        date_60d = date_end - timedelta(days=60)
+        
+        # Sous-ensembles de données pour les calculs
+        # 7 Jours Courant vs Précédent
+        sub_7_curr = df_metrics_source[(df_metrics_source['start_date_local'] > date_7d) & (df_metrics_source['start_date_local'] <= date_end)]
+        sub_7_prev = df_metrics_source[(df_metrics_source['start_date_local'] > date_14d) & (df_metrics_source['start_date_local'] <= date_7d)]
+        
+        # 30 Jours Courant vs Précédent
+        sub_30_curr = df_metrics_source[(df_metrics_source['start_date_local'] > date_30d) & (df_metrics_source['start_date_local'] <= date_end)]
+        sub_30_prev = df_metrics_source[(df_metrics_source['start_date_local'] > date_60d) & (df_metrics_source['start_date_local'] <= date_30d)]
+        
+        # Métriques Distance
+        d7_c = sub_7_curr['distance_km'].sum()
+        d7_p = sub_7_prev['distance_km'].sum()
+        d7_delta = calc_delta(d7_c, d7_p)
+        
+        d30_c = sub_30_curr['distance_km'].sum()
+        d30_p = sub_30_prev['distance_km'].sum()
+        d30_delta = calc_delta(d30_c, d30_p)
+        
+        # Métriques D+
+        e7_c = sub_7_curr['total_elevation_gain'].sum()
+        e7_p = sub_7_prev['total_elevation_gain'].sum()
+        e7_delta = calc_delta(e7_c, e7_p)
+        
+        e30_c = sub_30_curr['total_elevation_gain'].sum()
+        e30_p = sub_30_prev['total_elevation_gain'].sum()
+        e30_delta = calc_delta(e30_c, e30_p)
+        
+        # Métriques Temps
+        t7_c = sub_7_curr['moving_time'].sum()
+        t7_p = sub_7_prev['moving_time'].sum()
+        t7_delta = calc_delta(t7_c, t7_p)
+        
+        t30_c = sub_30_curr['moving_time'].sum()
+        t30_p = sub_30_prev['moving_time'].sum()
+        t30_delta = calc_delta(t30_c, t30_p)
+
 
         # --- UI TABS ---
         tab_cockpit, tab_micro, tab_labo = st.tabs(["🚀 Planification & Cockpit", "🔬 Microscope", "🧪 Laboratoire"])
@@ -491,52 +548,72 @@ else:
             # --- BLOC OBJECTIF (TOP) ---
             if user_goal and user_goal.get("date"):
                 st.markdown(f"### 🎯 Cap sur l'objectif : {user_goal.get('type')}")
-                
-                # Analyse IA Contextuelle
-                analysis_text, phase_name = analyze_goal_context(
-                    user_goal.get("type"), 
-                    user_goal.get("date"), 
-                    dist_7d, 
-                    last_metrics['CTL']
-                )
-                
+                analysis_text, phase_name = analyze_goal_context(user_goal.get("type"), user_goal.get("date"), d7_c, last_metrics['CTL'])
                 if analysis_text:
-                    st.markdown(f"""
-                    <div class="goal-card">
-                        <div class="goal-phase">{phase_name}</div>
-                        <div class="metric-insight" style="border:none; margin:0; opacity:1; color:#1e3a8a;">
-                            {analysis_text}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"""<div class="goal-card"><div class="goal-phase">{phase_name}</div><div class="metric-insight" style="border:none; margin:0; opacity:1; color:#1e3a8a;">{analysis_text}</div></div>""", unsafe_allow_html=True)
             else:
                 st.info("👈 Définis ton objectif et sa date dans la barre latérale pour activer l'analyse stratégique.")
 
-            # --- ÉTAT DES LIEUX ---
-            st.subheader(f"📅 État des lieux (7j finissant le {end_filter.strftime('%d/%m')})")
+            # --- ÉTAT DES LIEUX (BENTO DUAL) ---
+            st.subheader(f"📅 État des lieux (Finissant le {end_filter.strftime('%d/%m')})")
             
-            # Calculs sur la période affichée (df_display) ou 7j glissants ? 
-            # Le user a demandé "état des lieux des 7 jours glissants". Restons cohérents avec la "Time Machine".
-            # Ce sont les 7j terminant à end_filter.
+            col_d_1, col_d_2, col_d_3 = st.columns(3)
             
-            # Recalcul précis pour l'affichage
-            elev_7d = df_metrics_source[(df_metrics_source['start_date_local'] > date_7d_before_end) & 
-                                        (df_metrics_source['start_date_local'] <= pd.Timestamp(end_filter))]['total_elevation_gain'].sum()
-            time_7d = df_metrics_source[(df_metrics_source['start_date_local'] > date_7d_before_end) & 
-                                        (df_metrics_source['start_date_local'] <= pd.Timestamp(end_filter))]['moving_time'].sum()
-            
-            c7_1, c7_2, c7_3 = st.columns(3)
-            with c7_1:
-                 st.markdown(f'<div class="bento-small"><div class="metric-label">Volume 7j</div><div class="metric-value">{int(dist_7d)} km</div></div>', unsafe_allow_html=True)
-            with c7_2:
-                 st.markdown(f'<div class="bento-small"><div class="metric-label">Dénivelé 7j</div><div class="metric-value">{int(elev_7d)} m</div></div>', unsafe_allow_html=True)
-            with c7_3:
-                 st.markdown(f'<div class="bento-small"><div class="metric-label">Chrono 7j</div><div class="metric-value">{format_duration(time_7d)}</div></div>', unsafe_allow_html=True)
+            # BENTO DISTANCE
+            with col_d_1:
+                st.markdown(f"""
+                <div class="bento-dual">
+                    <div class="dual-left">
+                        <div class="metric-label">Volume 7j</div>
+                        <div class="metric-value">{int(d7_c)} km</div>
+                        <div class="metric-sub">vs prev: {format_delta(d7_delta)}</div>
+                    </div>
+                    <div class="dual-sep"></div>
+                    <div class="dual-right">
+                        <div class="metric-label-small">30 Jours</div>
+                        <div class="metric-value-small">{int(d30_c)} km</div>
+                        <div class="metric-sub" style="font-size:0.75rem;">{format_delta(d30_delta)}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # BENTO D+
+            with col_d_2:
+                st.markdown(f"""
+                <div class="bento-dual">
+                    <div class="dual-left">
+                        <div class="metric-label">Dénivelé 7j</div>
+                        <div class="metric-value">{int(e7_c)} m</div>
+                        <div class="metric-sub">vs prev: {format_delta(e7_delta)}</div>
+                    </div>
+                    <div class="dual-sep"></div>
+                    <div class="dual-right">
+                        <div class="metric-label-small">30 Jours</div>
+                        <div class="metric-value-small">{int(e30_c)} m</div>
+                        <div class="metric-sub" style="font-size:0.75rem;">{format_delta(e30_delta)}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            # BENTO TEMPS
+            with col_d_3:
+                st.markdown(f"""
+                <div class="bento-dual">
+                    <div class="dual-left">
+                        <div class="metric-label">Chrono 7j</div>
+                        <div class="metric-value" style="font-size:1.8rem;">{format_duration(t7_c)}</div>
+                        <div class="metric-sub">vs prev: {format_delta(t7_delta)}</div>
+                    </div>
+                    <div class="dual-sep"></div>
+                    <div class="dual-right">
+                        <div class="metric-label-small">30 Jours</div>
+                        <div class="metric-value-small" style="font-size:1.2rem;">{format_duration(t30_c)}</div>
+                        <div class="metric-sub" style="font-size:0.75rem;">{format_delta(t30_delta)}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             # --- ANALYSE DE CORRÉLATION (POST-STATUS) ---
-            # C'est ici qu'on fait le lien entre l'état actuel et l'objectif
-            # Déjà traité en partie dans le bloc bleu du haut, mais on peut ajouter des jauges spécifiques ici
-            
             st.divider()
 
             # --- VERDICT & BATTERIE ---
@@ -616,8 +693,6 @@ else:
             
             # --- GRAPH ---
             st.subheader("📉 Évolution")
-            # Graph sur la période du filtre sidebar (Time Machine)
-            # On prend un peu de marge avant pour voir la tendance
             start_graph = start_filter - timedelta(days=14)
             df_g = df_daily_metrics[(df_daily_metrics.index.date >= start_graph) & (df_daily_metrics.index.date <= end_filter)]
             
@@ -629,11 +704,9 @@ else:
 
         with tab_micro:
             st.info("Sélectionne une activité dans la barre latérale ou via les filtres pour analyser.")
-            # (Code microscope simplifié pour la démo, reprend la logique précédente)
-            # ...
 
         with tab_labo:
             st.info("Laboratoire des tendances long terme.")
-            # ...
+
     else:
         st.info("Aucune donnée disponible pour cette période.")
