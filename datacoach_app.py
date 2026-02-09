@@ -14,7 +14,7 @@ import numpy as np
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Smart Run Coach", page_icon="🏃‍♂️", layout="wide")
 
-# --- STYLES CSS PERSONNALISÉS (BENTO PRO + DUAL) ---
+# --- STYLES CSS PERSONNALISÉS (BENTO PRO + DUAL + COACH) ---
 st.markdown("""
 <style>
     /* Style global des boîtes Bento */
@@ -137,15 +137,9 @@ st.markdown("""
         padding: 20px;
         margin: 20px 0;
     }
-    .goal-title {
-        color: #1d4ed8;
-        font-size: 1.2rem;
-        font-weight: bold;
-        margin-bottom: 10px;
-    }
     .goal-phase {
         display: inline-block;
-        background-color: #ffffff;
+        background-color: #3b82f6;
         color: white;
         padding: 4px 12px;
         border-radius: 20px;
@@ -153,6 +147,50 @@ st.markdown("""
         font-weight: 600;
         margin-bottom: 10px;
         text-transform: uppercase;
+    }
+    
+    /* NOUVEAU : Espace Commentaire Data Coach */
+    .coach-comment-box {
+        background-color: #f8fafc; /* Gris très clair/Bleuté */
+        border-left: 6px solid #2563eb; /* Bleu Roi */
+        border-radius: 8px;
+        padding: 25px;
+        margin: 25px 0;
+        position: relative;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .coach-avatar {
+        font-size: 2rem;
+        position: absolute;
+        top: -15px;
+        left: -15px;
+        background: white;
+        border-radius: 50%;
+        padding: 5px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .coach-title {
+        font-weight: 800;
+        color: #1e40af;
+        text-transform: uppercase;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+        letter-spacing: 0.05em;
+    }
+    .coach-text {
+        color: #334155;
+        font-size: 1.05rem;
+        line-height: 1.7;
+    }
+    /* Mode sombre compatible */
+    @media (prefers-color-scheme: dark) {
+        .coach-comment-box {
+            background-color: rgba(30, 41, 59, 0.5);
+            color: #e2e8f0;
+        }
+        .coach-text {
+            color: #cbd5e1;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -165,13 +203,13 @@ ACTIVITY_TRANSLATIONS = {
     "Run": "Course à pied",
     "Ride": "Vélo",
     "VirtualRide": "Vélo Intérieur",
-    "WeightTraining": "PPG",
+    "WeightTraining": "Musculation",
     "Hike": "Randonnée",
     "Walk": "Marche",
     "Swim": "Natation",
     "AlpineSki": "Ski Alpin",
     "BackcountrySki": "Ski de Rando",
-    "Workout": "PPG",
+    "Workout": "Entraînement",
     "Yoga": "Yoga"
 }
 
@@ -269,46 +307,144 @@ def analyze_goal_context(goal_type, goal_date_str, current_vol_7d, ctl_val):
     if goal_type == "Prépa Marathon":
         if days_remaining > 120:
             phase = "Développement Général"
-            advice = f"Il reste {weeks_remaining} semaines. C'est le moment de construire la caisse (Volume) sans intensité spécifique. Ton volume actuel ({int(current_vol_7d)}km) doit augmenter progressivement."
+            advice = f"Il reste {weeks_remaining} semaines. C'est le moment de construire la caisse (Volume) sans intensité spécifique."
         elif 60 < days_remaining <= 120:
             phase = "Cycle Spécifique 1"
-            advice = "On rentre dans le dur. Les sorties longues doivent commencer à s'allonger. Intègre de l'allure marathon sur des blocs de 15-20 min."
-            if current_vol_7d < 30: 
-                advice += " ⚠️ **Attention :** Ton volume hebdo (<30km) est très faible pour cette phase. Il faut réagir !"
-                status_icon = "🔴"
+            advice = "On rentre dans le dur. Les sorties longues doivent commencer à s'allonger."
         elif 21 < days_remaining <= 60:
             phase = "Pic de Charge"
-            advice = "C'est les semaines les plus dures. Le volume doit être à son maximum. Le sommeil est aussi important que l'entraînement."
-            if ctl_val < 40:
-                advice += " ⚠️ Ton capital endurance (CTL) semble un peu juste pour encaisser les 42km sereinement."
-                status_icon = "🟠"
+            advice = "C'est les semaines les plus dures. Le volume doit être à son maximum."
         elif 0 <= days_remaining <= 21:
             phase = "Affûtage (Tapering)"
-            advice = "Le travail est fait. Il faut maintenant réduire le volume drastiquement (60% puis 40%) pour faire monter la fraîcheur (TSB)."
+            advice = "Le travail est fait. Il faut maintenant réduire le volume pour faire monter la fraîcheur."
         else:
-            phase = "Récupération / Objectif Passé"
-            advice = "Bravo pour l'effort. Prends le temps de régénérer."
+            phase = "Récupération"
+            advice = "Bravo pour l'effort."
     elif goal_type in ["Prépa 10km", "Prépa Semi"]:
         if days_remaining > 60:
             phase = "Foncier & Vitesse"
-            advice = "Travaille les extrêmes : Footings lents et Vitesse pure (VMA courte)."
+            advice = "Travaille les extrêmes : Footings lents et Vitesse pure."
         elif 14 < days_remaining <= 60:
             phase = "Spécifique Allure"
-            advice = f"Il reste {weeks_remaining} semaines. Tes séances doivent inclure des répétitions à l'allure cible ({'10km' if '10km' in goal_type else 'Semi'})."
+            advice = f"Il reste {weeks_remaining} semaines. Tes séances doivent inclure des répétitions à l'allure cible."
         elif 0 <= days_remaining <= 14:
             phase = "Fraîcheur"
-            advice = "Réduis la durée des séances mais garde un peu d'intensité pour garder le rythme."
+            advice = "Réduis la durée des séances mais garde un peu d'intensité."
         else:
             phase = "Terminé"
             advice = "Objectif passé."
     else:
         phase = "Régularité & Plaisir"
-        if current_vol_7d > 20:
-            advice = "Excellent volume pour la santé. Continue comme ça !"
-        else:
-            advice = "Essaie de maintenir 3 créneaux de 30min par semaine, c'est la clé du métabolisme."
-    full_text = f"**J-{days_remaining}** ({weeks_remaining} semaines) • **{phase}**\n\n{status_icon} {advice}"
+        advice = "L'important c'est la consistance."
+
+    full_text = f"**J-{days_remaining}** ({weeks_remaining} semaines) • **{phase}**\n\n{advice}"
     return full_text, phase
+
+def generate_expert_advice(goal_type, goal_date_str, vol_7d, vol_30d, user_note):
+    """
+    Moteur de règles expert pour générer le commentaire du Data Coach.
+    Prend en compte :
+    - Le type d'objectif
+    - Le temps restant (deadline)
+    - Le volume actuel (7j) et la tendance (30j)
+    - Les notes utilisateur (ex: chrono visé)
+    """
+    if not goal_date_str or not goal_type:
+        return "👋 **Bienvenue !**\n\nPour que je puisse t'aider efficacement, commence par définir ton **Objectif** et sa **Date** dans la barre latérale gauche. C'est la base de toute stratégie !"
+
+    try:
+        target_date = datetime.strptime(goal_date_str, "%Y-%m-%d")
+    except:
+        return "Erreur de date."
+
+    days_remaining = (target_date - datetime.now()).days
+    weeks_remaining = max(0, days_remaining // 7)
+    
+    # Estimation de la tendance
+    avg_week_vol_30d = vol_30d / 4
+    trend_arrow = "stable"
+    if vol_7d > avg_week_vol_30d * 1.1: trend_arrow = "en hausse"
+    elif vol_7d < avg_week_vol_30d * 0.9: trend_arrow = "en baisse"
+    
+    # Détection d'objectif de performance (chrono)
+    has_time_goal = False
+    if user_note and any(char.isdigit() for char in user_note):
+        has_time_goal = True # Simplifié, détecte s'il y a des chiffres dans la note
+    
+    intro = f"Analyse pour ton objectif **{goal_type}** dans **{weeks_remaining} semaines** :"
+    advice = ""
+    alert = ""
+
+    # --- LOGIQUE MARATHON ---
+    if goal_type == "Prépa Marathon":
+        min_vol_marathon = 40 # Volume mini tolérable pour finir
+        target_vol_marathon = 60 # Volume cible standard
+
+        if has_time_goal: target_vol_marathon = 70 # Plus exigeant si chrono visé
+
+        if days_remaining > 90: # > 3 mois
+            if vol_7d < 20:
+                advice = f"On est encore loin (J-{days_remaining}), mais attention : ton volume actuel ({int(vol_7d)}km) est très faible pour envisager un marathon. Il faut construire la machine dès maintenant. L'objectif est d'atteindre progressivement 30-40km/semaine d'ici le mois prochain."
+            else:
+                advice = f"Tu es dans la phase de construction. Ton volume de {int(vol_7d)}km est cohérent pour le moment. Profite de cette période loin de l'échéance pour travailler ta VMA courte et ton renforcement musculaire, avant d'attaquer les sorties très longues."
+        
+        elif 30 < days_remaining <= 90: # 1 à 3 mois (Cœur de prépa)
+            if vol_7d < min_vol_marathon:
+                alert = "🚨 **ALERTE VOLUME**"
+                advice = f"Tu entres dans le dur de la prépa et tu n'as couru que {int(vol_7d)}km cette semaine. C'est insuffisant pour préparer ton corps aux chocs du 42km. Pour éviter le 'mur' au 30ème km, tu dois impérativement augmenter la durée de tes sorties longues. Vise au moins {min_vol_marathon}-{target_vol_marathon}km par semaine dès maintenant."
+            elif vol_7d > target_vol_marathon:
+                advice = f"Excellent travail ! Avec {int(vol_7d)}km, tu es en pleine charge. Attention toutefois à ne pas te griller : si tu sens une fatigue persistante, n'hésite pas à faire une semaine d'assimilation (baisse de 30% du volume) avant de repartir."
+            else:
+                advice = f"Tu es sur la bonne voie ({int(vol_7d)}km). Assure-toi que ta sortie longue hebdomadaire commence à dépasser 1h45. C'est le pilier de ta réussite."
+        
+        elif 14 < days_remaining <= 30: # Le pic et début affûtage
+            if vol_7d < min_vol_marathon:
+                advice = f"C'est la dernière ligne droite. Ton volume est un peu léger ({int(vol_7d)}km). Ne cherche pas à rattraper le retard perdu maintenant, tu risquerais la blessure. Concentre-toi sur la qualité : maintiens une sortie longue mais réduis le reste."
+            else:
+                advice = "Tu as fait le job. Le plus gros volume est derrière toi. Commence à penser à la fraîcheur. Dors, hydrate-toi, et ne tente plus de séances héroïques."
+                
+        elif 0 <= days_remaining <= 14: # Affûtage
+            if trend_arrow == "en hausse":
+                alert = "🛑 **STOP !**"
+                advice = f"Tu en fais trop ! À J-{days_remaining}, tu devrais réduire ton volume, pas l'augmenter ! Tu es à {int(vol_7d)}km alors que tu devrais être en mode économie d'énergie. Fais du jus, pas des kilomètres."
+            else:
+                advice = "Mode 'Affûtage' activé. Tu réduis le volume, c'est parfait. Garde juste quelques rappels d'allure marathon (ex: 2x10min) pour garder le rythme, mais le reste doit être du footing facile. La confiance est là."
+
+    # --- LOGIQUE 10KM / SEMI ---
+    elif goal_type in ["Prépa 10km", "Prépa Semi"]:
+        is_semi = "Semi" in goal_type
+        target_vol = 40 if is_semi else 30
+        
+        if days_remaining > 45:
+            advice = f"Tu as le temps. Travaille ta vitesse de base. Ton volume de {int(vol_7d)}km est une base de travail. Essaie d'intégrer une séance de fractionné court (type 30/30) pour débrider le moteur."
+        elif 14 < days_remaining <= 45:
+            if vol_7d < (target_vol * 0.7):
+                advice = f"Il faut passer la seconde. {int(vol_7d)}km/semaine, c'est un peu juste pour performer sur {goal_type}. Essaie d'ajouter un footing de 30min ou d'allonger ta sortie du week-end."
+            else:
+                advice = f"Bonne dynamique ({int(vol_7d)}km). C'est le moment de travailler l'allure spécifique : tes séances doivent inclure des blocs à la vitesse que tu vises le jour J."
+        else: # < 14j
+             advice = "Fais du jus. Réduis la durée des séances de 30 à 50% mais garde de l'intensité. Tes jambes doivent fourmiller d'envie de courir."
+
+    # --- AUTRES ---
+    else:
+        if vol_7d < 10:
+            advice = "La régularité est la clé de tout progrès. Essaie de courir au moins 2 fois par semaine, même 20 minutes. C'est mieux qu'une grosse sortie tous les 15 jours."
+        elif vol_7d > 40 and goal_type == "Entretien / Plaisir":
+            advice = f"Tu cours beaucoup ({int(vol_7d)}km) pour un objectif 'Plaisir' ! C'est top. Si tu ne prépares rien de spécial, écoute juste tes envies et varie les terrains pour ne pas t'ennuyer."
+        else:
+            advice = f"Tu maintiens un bon cap ({int(vol_7d)}km cette semaine). Continue comme ça."
+
+    # Assemblage
+    final_html = f"""
+    <div class="coach-comment-box">
+        <div class="coach-avatar">🤖</div>
+        <div class="coach-title">L'Œil du Data Coach</div>
+        <div class="coach-text">
+            {alert + ' ' if alert else ''}{advice}
+        </div>
+    </div>
+    """
+    return final_html
 
 # Helper variation
 def calc_delta(curr, prev):
@@ -317,8 +453,6 @@ def calc_delta(curr, prev):
 
 def format_delta(val):
     sign = "+" if val > 0 else ""
-    # Vert si positif (Volume augmenté), mais pour le contexte général c'est souvent positif
-    # On peut affiner : si augmentation > 50% c'est rouge ? Pour l'instant restons simple.
     color = "#22c55e" if val >= 0 else "#f97316" 
     return f'<span style="color:{color}; font-weight:bold; font-size:0.85rem;">{sign}{val}%</span>'
 
@@ -613,7 +747,18 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # --- ANALYSE DE CORRÉLATION (POST-STATUS) ---
+            # --- ANALYSE DE CORRÉLATION (EXPERT ADVICE) ---
+            # C'est ici que l'on insère le bloc "Locace"
+            if user_goal and user_goal.get("date"):
+                coach_html = generate_expert_advice(
+                    user_goal.get("type"), 
+                    user_goal.get("date"), 
+                    d7_c, 
+                    d30_c, 
+                    user_goal.get("note")
+                )
+                st.markdown(coach_html, unsafe_allow_html=True)
+
             st.divider()
 
             # --- VERDICT & BATTERIE ---
